@@ -1,31 +1,58 @@
 # Quét Ảnh Ra PDF
 
-Ứng dụng web nhỏ biến ảnh chụp tài liệu thành file PDF gọn, dễ đọc, lấy cảm hứng từ cách làm của các app quét tài liệu như CamScanner. Mọi xử lý diễn ra ngay trong trình duyệt: ảnh không được gửi lên máy chủ nào.
+Ứng dụng web biến ảnh chụp tài liệu thành file PDF gọn, dễ đọc, lấy cảm hứng từ cách làm của các app quét tài liệu như CamScanner. Mọi xử lý diễn ra ngay trên máy: ảnh không được gửi lên máy chủ nào.
+
+**Mở app:** https://lemyx1997.github.io/quet-anh-ra-pdf/
+
+## Cài vào điện thoại
+
+Bấm nút **“Cài vào máy”** ở góc trên app, rồi làm theo hướng dẫn hiện ra.
+
+- **Android (Chrome):** bấm “Cài đặt ngay”, hoặc menu ⋮ → “Cài đặt ứng dụng”.
+- **iPhone (Safari):** nút Chia sẻ → “Thêm vào MH chính”.
+- **Đang mở trong Zalo/Facebook:** bấm ⋯ → “Mở bằng trình duyệt” trước, vì trình duyệt bên trong Zalo/Facebook không cài app được.
+- **Máy báo đã cài nhưng không thấy biểu tượng:**
+  - Tìm “Quét PDF” trong danh sách ứng dụng.
+  - Xiaomi/Oppo/Vivo: cấp quyền “Lối tắt màn hình chính” cho Chrome.
+  - Samsung: bật “Thêm ứng dụng mới vào Màn hình chờ”.
+
+Sau khi cài, app có biểu tượng riêng và mở được cả khi không có mạng.
 
 ## Tính năng
 
-- **Chụp nhiều trang liên tục**: mở camera ngay trong app, lật trang và bấm chụp liên tục, mỗi lần chụp tự cắt thành một trang. Nơi không mở được camera trực tiếp (ví dụ trong Claude), app dùng camera của máy và sau mỗi ảnh có nút “Chụp tiếp”.
-- **Thêm ảnh**: chọn nhiều ảnh cùng lúc, kéo thả hoặc dán (Ctrl+V).
-- **Tự tìm mép giấy** và nắn thẳng trang chụp nghiêng.
-- **Cắt theo tứ giác tuỳ ý**:
-  - kéo từng góc (có kính lúp phóng to để đặt chính xác);
-  - kéo nút giữa cạnh để dời cả cạnh, kéo bên trong để dời cả khung;
-  - “Vẽ khung mới”: chạm 4 điểm theo thứ tự bất kỳ;
-  - trên máy tính: bấm chọn góc rồi dùng phím mũi tên (giữ Shift để nhích nhanh), Ctrl+Z để hoàn tác.
-- **Khổ trang sau khi cắt**: Tự động, A4, Thẻ / CCCD, Vuông.
-- **Cắt thêm vùng**: một ảnh chứa nhiều tài liệu (hai trang sách, nhiều hoá đơn) cắt thành nhiều trang.
-- **Kiểu màu**: Rõ nét (làm trắng nền, khử bóng), Ảnh gốc, Xám, Đen trắng; áp một kiểu cho mọi trang.
-- **Quản lý trang**: đổi thứ tự, xoay, xoá (có hoàn tác).
-- **Xuất PDF**: khổ A4 hoặc theo ảnh, có hoặc không lề, ba mức độ nét (Nhẹ để gửi Zalo, Vừa, Nét nhất để in).
-- **Xuất ảnh dài**: ghép mọi trang thành một ảnh JPG dọc để gửi qua tin nhắn. Khi quá nhiều trang, ảnh tự thu nhỏ để điện thoại vẫn mở được.
+**Chụp và thêm trang**
+- Chụp nhiều trang liên tục. Khung xanh bám mép giấy ngay khi ngắm. Chế độ **Tự chụp** tự bấm khi giấy đứng yên và chờ bạn lật sang trang mới.
+- Chọn nhiều ảnh, kéo thả hoặc dán (Ctrl+V).
 
-Bản web: https://lemyx1997.github.io/quet-anh-ra-pdf/
+**Cắt và chỉnh trang**
+- Tự tìm mép giấy và nắn thẳng.
+- Cắt theo tứ giác tuỳ ý:
+  - kéo góc, có kính lúp để đặt chính xác;
+  - vẽ khung bằng 4 lần chạm;
+  - dời cả khung;
+  - trên máy tính: phím mũi tên, Ctrl+Z để hoàn tác.
+- Khổ trang: Tự động, A4, Thẻ/CCCD, Vuông.
+- **Tách 2 trang sách**: tự tìm gáy sách và tách thành hai trang.
+- Cắt thêm vùng khác từ cùng một ảnh.
+- Kiểu màu: Rõ nét (làm trắng nền, khử bóng), Ảnh gốc, Xám, Đen trắng.
 
-## Cách dùng
+**Ký tên và đọc chữ**
+- **Ký tên**: ký bằng ngón tay, đặt lên trang, kéo dời, đổi cỡ. Chữ ký được lưu lại để dùng tiếp.
+- **Lấy chữ (OCR)**: đọc chữ tiếng Việt trong trang ngay trên máy, rồi chép hoặc lưu ra file .txt.
 
-Mở `docs/index.html` bằng trình duyệt (Chrome, Edge, Safari, Firefox). Cần mạng để tải công cụ tạo PDF và phông chữ lần đầu.
+**Quản lý tài liệu**
+- Giữ và kéo để đổi thứ tự trang; xoay, xoá (có hoàn tác).
+- Tự lưu tài liệu đang làm: đóng app mở lại vẫn còn. Nút “Tài liệu mới” để bắt đầu lại.
 
-`index.html` ở thư mục gốc là bản dùng cho Claude Artifact; `docs/index.html` là bản đầy đủ chạy độc lập (dùng được với GitHub Pages).
+**Xuất file**
+- **PDF**:
+  - khổ A4 hoặc theo ảnh, có hoặc không lề;
+  - ba mức độ nét;
+  - giới hạn dung lượng (dưới 1, 2 hoặc 5 MB);
+  - dấu chìm;
+  - mật khẩu mở file (mức bảo vệ cơ bản).
+- **Ảnh dài**: ghép mọi trang thành một ảnh JPG để gửi qua tin nhắn.
+- Lưu về máy, hoặc gửi thẳng qua Zalo, Messenger… trên điện thoại.
 
 ## Giấy phép
 
