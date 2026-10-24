@@ -4,7 +4,8 @@
 
 ## Tính năng
 
-- **Thêm ảnh**: chụp bằng camera điện thoại, chọn nhiều ảnh cùng lúc, kéo thả hoặc dán (Ctrl+V).
+- **Chụp nhiều trang liên tục**: mở camera ngay trong app, lật trang và bấm chụp liên tục, mỗi lần chụp tự cắt thành một trang. Nơi không mở được camera trực tiếp (ví dụ trong Claude), app dùng camera của máy và sau mỗi ảnh có nút “Chụp tiếp”.
+- **Thêm ảnh**: chọn nhiều ảnh cùng lúc, kéo thả hoặc dán (Ctrl+V).
 - **Tự tìm mép giấy** và nắn thẳng trang chụp nghiêng.
 - **Cắt theo tứ giác tuỳ ý**:
   - kéo từng góc (có kính lúp phóng to để đặt chính xác);
@@ -16,6 +17,9 @@
 - **Kiểu màu**: Rõ nét (làm trắng nền, khử bóng), Ảnh gốc, Xám, Đen trắng; áp một kiểu cho mọi trang.
 - **Quản lý trang**: đổi thứ tự, xoay, xoá (có hoàn tác).
 - **Xuất PDF**: khổ A4 hoặc theo ảnh, có hoặc không lề, ba mức độ nét (Nhẹ để gửi Zalo, Vừa, Nét nhất để in).
+- **Xuất ảnh dài**: ghép mọi trang thành một ảnh JPG dọc để gửi qua tin nhắn. Khi quá nhiều trang, ảnh tự thu nhỏ để điện thoại vẫn mở được.
+
+Bản web: https://lemyx1997.github.io/quet-anh-ra-pdf/
 
 ## Cách dùng
 

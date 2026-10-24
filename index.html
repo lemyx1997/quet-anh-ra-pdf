@@ -127,6 +127,21 @@ fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;
 .result strong{display:block;overflow-wrap:anywhere}
 .result span{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
 
+/* Chụp liên tục */
+.cam{position:fixed;inset:0;z-index:22;background:#000;color:#fff}
+.cam video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
+.cam-flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .25s}
+.cam-flash.on{opacity:.75;transition:none}
+.cam-top,.cam-bottom{position:absolute;left:0;right:0;display:flex;align-items:center;justify-content:space-between;gap:12px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));background:rgba(0,0,0,.45)}
+.cam-top{top:0;padding-top:calc(10px + env(safe-area-inset-top,0px));padding-bottom:10px}
+.cam-top span{font-weight:600;font-size:14px;text-align:center;flex:1}
+.cam-bottom{bottom:0;padding-top:16px;padding-bottom:calc(18px + env(safe-area-inset-bottom,0px))}
+.cam-last{width:56px;height:72px;border-radius:8px;border:2px solid rgba(255,255,255,.6);background:#222 center/contain no-repeat;position:relative}
+.cam-last b{position:absolute;right:-8px;top:-8px;min-width:22px;height:22px;border-radius:11px;background:var(--studio-accent);color:#04211a;font-size:12px;display:grid;place-items:center;padding:0 5px}
+.shutter{width:74px;height:74px;border-radius:50%;border:4px solid #fff;background:rgba(255,255,255,.25);box-shadow:inset 0 0 0 4px #000;cursor:pointer;padding:0}
+.shutter:active{background:#fff}
+.cam-tip{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(120px + env(safe-area-inset-bottom,0px));background:rgba(0,0,0,.55);padding:6px 12px;border-radius:99px;font-size:13px;white-space:nowrap;max-width:calc(100% - 32px);overflow:hidden;text-overflow:ellipsis}
+.result img{width:44px;height:64px;object-fit:cover;object-position:top;border-radius:4px;flex:none;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2)}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:40;background:var(--ink);color:var(--surface);padding:10px 14px;border-radius:12px;font-size:14px;display:flex;gap:12px;align-items:center;max-width:calc(100% - 32px);box-shadow:0 8px 24px rgba(0,0,0,.25)}
 .toast button{border:0;background:transparent;color:var(--accent-soft);font-weight:700;cursor:pointer;padding:4px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
@@ -155,7 +170,7 @@ fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;
 <div class="bar">
   <div class="wrap bar-in">
     <input id="camIn" class="vh" type="file" accept="image/*" capture="environment">
-    <label class="btn" for="camIn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg><span>Chụp<span class="lg"> ảnh</span></span></label>
+    <button class="btn" id="camBtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg><span>Chụp<span class="lg"> ảnh</span></span></button>
     <input id="fileIn" class="vh" type="file" accept="image/*" multiple>
     <label class="btn" for="fileIn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><circle cx="9" cy="9.5" r="1.5"/><path d="m20 15-4-4-8 9"/></svg><span>Chọn<span class="lg"> ảnh</span></span></label>
     <button id="exportBtn" class="btn primary" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M14 3H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7z"/><path d="M14 3v4h4M9 14l3 3 3-3M12 10v7"/></svg><span id="exportTxt">Tạo PDF</span></button>
@@ -204,13 +219,19 @@ fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="shTitle">
     <div class="sh-head"><h2 id="shTitle">Tạo file PDF</h2><button id="shClose" class="x" type="button" aria-label="Đóng">×</button></div>
     <label class="field"><span>Tên file</span><input id="fname" type="text" autocomplete="off"></label>
-    <fieldset><legend>Khổ giấy</legend>
+    <fieldset><legend>Xuất ra</legend>
+      <div class="seg">
+        <label><input type="radio" name="fmt" id="fmtPdf" value="pdf" checked>File PDF<small>Mỗi ảnh một trang</small></label>
+        <label><input type="radio" name="fmt" id="fmtLong" value="long">Ảnh dài<small>Ghép thành 1 ảnh JPG</small></label>
+      </div>
+    </fieldset>
+    <fieldset id="fsSize"><legend>Khổ giấy</legend>
       <div class="seg">
         <label><input type="radio" name="size" id="sizeA4" value="a4" checked>A4<small>Chuẩn để in</small></label>
         <label><input type="radio" name="size" id="sizeFit" value="fit">Theo ảnh<small>Vừa khít trang</small></label>
       </div>
     </fieldset>
-    <fieldset><legend>Lề trang</legend>
+    <fieldset id="fsMargin"><legend>Lề trang</legend>
       <div class="seg">
         <label><input type="radio" name="margin" id="mYes" value="1" checked>Có lề<small>Trắng 1 cm</small></label>
         <label><input type="radio" name="margin" id="mNo" value="0">Không lề<small>Tràn trang</small></label>
@@ -225,11 +246,24 @@ fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;
     </fieldset>
     <div class="prog" id="prog" hidden><div class="pbar"><i id="pfill"></i></div><span id="ptxt">Đang tạo…</span></div>
     <div class="result" id="result" hidden>
-      <svg viewBox="0 0 34 40" aria-hidden="true"><path d="M3 2h20l9 9v27H3z" fill="var(--surface)" stroke="var(--accent)" stroke-width="2"/><path d="M23 2v9h9" fill="none" stroke="var(--accent)" stroke-width="2"/><text x="17.5" y="30" text-anchor="middle" font-size="9" font-weight="700" fill="var(--accent)" font-family="Arial">PDF</text></svg>
+      <svg viewBox="0 0 34 40" aria-hidden="true"><path d="M3 2h20l9 9v27H3z" fill="var(--surface)" stroke="var(--accent)" stroke-width="2"/><path d="M23 2v9h9" fill="none" stroke="var(--accent)" stroke-width="2"/><text id="rExt" x="17.5" y="30" text-anchor="middle" font-size="9" font-weight="700" fill="var(--accent)" font-family="Arial">PDF</text></svg>
+      <img id="rThumb" alt="Xem trước ảnh dài" hidden>
       <div><strong id="rName">TaiLieu.pdf</strong><span id="rInfo">3 trang · 1,2 MB</span></div>
     </div>
     <button id="makeBtn" class="btn primary wide" type="button">Tạo PDF</button>
-    <button id="saveBtn" class="btn wide" type="button" hidden>Lưu file PDF về máy</button>
+    <button id="saveBtn" class="btn wide" type="button" hidden>Lưu file về máy</button>
+  </div>
+</div>
+
+<div id="cam" class="cam" hidden role="dialog" aria-modal="true" aria-label="Chụp nhiều trang">
+  <video id="camVideo" playsinline muted autoplay></video>
+  <div id="camFlash" class="cam-flash"></div>
+  <div class="cam-top"><button id="camClose" class="ebtn" type="button">Đóng</button><span id="camCount">Chụp nhiều trang liên tục</span><span style="width:76px"></span></div>
+  <div class="cam-tip" id="camTip">Để cả tờ giấy nằm trong khung rồi bấm nút tròn</div>
+  <div class="cam-bottom">
+    <div class="cam-last" id="camLast" aria-hidden="true"></div>
+    <button id="camShutter" class="shutter" type="button" aria-label="Chụp trang"></button>
+    <button id="camDone" class="ebtn primary" type="button">Xong</button>
   </div>
 </div>
 
@@ -245,7 +279,8 @@ const FILTERS = [{id:'magic',name:'Rõ nét'},{id:'orig',name:'Ảnh gốc'},{id
 const QUALITY = {light:{long:1600,q:.62},mid:{long:2200,q:.8},best:{long:3000,q:.9}};
 const pages = [];
 let nextId = 1;
-const frame = () => new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
+// Nhường một nhịp để giao diện kịp vẽ; vẫn chạy tiếp khi trang bị ẩn (không còn khung hình)
+const frame = () => new Promise(r => { let done = false; const go = () => { if (!done){ done = true; r(); } }; requestAnimationFrame(() => setTimeout(go, 0)); setTimeout(go, 80); });
 
 /* ---------- Tiện ích ảnh ---------- */
 function mkCanvas(w, h){ const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w)); c.height = Math.max(1, Math.round(h)); return c; }
@@ -589,8 +624,7 @@ grid.addEventListener('click', e => {
 async function addFiles(fileList){
   const files = [...fileList].filter(f => /^image\//.test(f.type) || /\.(jpe?g|png|webp|gif|bmp|heic|heif)$/i.test(f.name));
   if (!files.length){ toast('Hãy chọn file ảnh (JPG, PNG…)'); return; }
-  for (let i = pages.length - 1; i >= 0; i--) if (pages[i].sample) pages.splice(i, 1);
-  renderGrid();
+  removeSamples();
   let ok = 0, notFound = 0;
   for (let k = 0; k < files.length; k++){
     toast(`Đang xử lý ảnh ${k+1}/${files.length}…`, null, null, true);
@@ -607,9 +641,68 @@ async function addFiles(fileList){
     msg += notFound ? ` Có ${notFound} ảnh chưa tìm thấy mép giấy, bấm vào trang và chọn “Cắt lại”.` : ' Bấm vào trang để chỉnh nếu cần.';
     toast(msg);
   }
+  return ok;
+}
+function removeSamples(){
+  let changed = false;
+  for (let i = pages.length - 1; i >= 0; i--) if (pages[i].sample){ pages.splice(i, 1); changed = true; }
+  if (changed) renderGrid();
 }
 $('#fileIn').addEventListener('change', e => { addFiles(e.target.files); e.target.value = ''; });
-$('#camIn').addEventListener('change', e => { addFiles(e.target.files); e.target.value = ''; });
+// Chụp bằng camera của máy: chụp xong mời chụp tiếp trang sau
+$('#camIn').addEventListener('change', async e => {
+  const files = [...e.target.files]; e.target.value = '';
+  const ok = await addFiles(files);
+  if (ok) toast(`Đã có ${pages.length} trang. Chụp tiếp trang sau?`, 'Chụp tiếp', () => $('#camIn').click());
+});
+
+/* ---------- Chụp nhiều trang liên tục bằng camera trực tiếp ---------- */
+const IN_FRAME = (() => { try { return window.self !== window.top; } catch (e){ return true; } })();
+let camStream = null, camShots = 0, camBusy = false;
+const camVideo = $('#camVideo');
+$('#camBtn').addEventListener('click', () => {
+  if (!IN_FRAME && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) openLiveCam();
+  else $('#camIn').click();
+});
+async function openLiveCam(){
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({audio: false, video: {facingMode: {ideal: 'environment'}, width: {ideal: 3840}, height: {ideal: 2160}}});
+  } catch (e){
+    camStream = null;
+    toast('Không mở được camera trực tiếp (có thể chưa cho phép). Dùng camera của máy để chụp từng trang.', 'Mở camera', () => $('#camIn').click());
+    return;
+  }
+  camShots = 0; camVideo.srcObject = camStream;
+  $('#camLast').style.backgroundImage = ''; $('#camLast').innerHTML = '';
+  $('#camCount').textContent = 'Chụp nhiều trang liên tục';
+  $('#cam').hidden = false; document.body.classList.add('lock');
+  try { await camVideo.play(); } catch (e){}
+}
+function closeLiveCam(){
+  if (camStream) camStream.getTracks().forEach(t => t.stop());
+  camStream = null; camVideo.srcObject = null;
+  $('#cam').hidden = true; document.body.classList.remove('lock');
+  refreshThumbs();
+  if (camShots) toast(`Đã chụp thêm ${camShots} trang. Bấm vào trang để chỉnh nếu cần.`);
+}
+$('#camShutter').addEventListener('click', async () => {
+  if (camBusy || !camVideo.videoWidth) return;
+  camBusy = true;
+  const c = mkCanvas(camVideo.videoWidth, camVideo.videoHeight); c.getContext('2d').drawImage(camVideo, 0, 0);
+  const fl = $('#camFlash'); fl.classList.add('on'); requestAnimationFrame(() => requestAnimationFrame(() => fl.classList.remove('on')));
+  try {
+    await frame();
+    removeSamples();
+    const p = makePage(c); pages.push(p); camShots++;
+    renderGrid();
+    $('#camLast').style.backgroundImage = `url(${renderPage(p, 240).toDataURL('image/jpeg', .8)})`;
+    $('#camLast').innerHTML = `<b>${camShots}</b>`;
+    $('#camCount').textContent = `Đã chụp ${camShots} trang`;
+    $('#camTip').textContent = p.found ? 'Đã tự cắt. Lật sang trang tiếp rồi bấm chụp' : 'Chưa thấy mép giấy, có thể chỉnh lại sau';
+  } finally { camBusy = false; }
+});
+$('#camDone').addEventListener('click', closeLiveCam);
+$('#camClose').addEventListener('click', closeLiveCam);
 document.addEventListener('paste', e => { const fs = [...(e.clipboardData?.files || [])]; if (fs.length && $('#editor').hidden) addFiles(fs); });
 let dragDepth = 0;
 document.addEventListener('dragenter', e => { if ([...e.dataTransfer.types].includes('Files')){ dragDepth++; $('#dropHint').hidden = false; } });
@@ -909,7 +1002,8 @@ function cancelEditor(){
 $('#edCancel').addEventListener('click', () => { if (ed.step === 'filter') setStep('crop'); else cancelEditor(); });
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape'){
-    if (!$('#sheet').hidden) closeSheet();
+    if (!$('#cam').hidden) closeLiveCam();
+    else if (!$('#sheet').hidden) closeSheet();
     else if (ed.p && ed.drawMode) setDrawMode(false);
     else if (ed.p) cancelEditor();
     return;
@@ -933,22 +1027,74 @@ function openSheet(){
   if (!pages.length) return;
   if (!$('#fname').value) $('#fname').value = todayName();
   $('#result').hidden = true; $('#saveBtn').hidden = true; $('#prog').hidden = true; $('#makeBtn').disabled = false;
-  $('#makeBtn').textContent = `Tạo PDF (${pages.length} trang)`;
+  updateSheetUI();
   $('#sheet').hidden = false;
 }
+const fmtNow = () => document.querySelector('input[name="fmt"]:checked').value;
+function updateSheetUI(){
+  const long = fmtNow() === 'long';
+  $('#fsSize').hidden = long; $('#fsMargin').hidden = long;
+  $('#shTitle').textContent = long ? 'Tạo ảnh dài' : 'Tạo file PDF';
+  $('#makeBtn').textContent = long ? `Tạo ảnh dài (${pages.length} trang)` : `Tạo PDF (${pages.length} trang)`;
+  $('#result').hidden = true; $('#saveBtn').hidden = true;
+}
+document.querySelectorAll('input[name="fmt"]').forEach(r => r.addEventListener('change', updateSheetUI));
 function closeSheet(){ if (!makingPdf) $('#sheet').hidden = true; }
 $('#exportBtn').addEventListener('click', openSheet);
 $('#shClose').addEventListener('click', closeSheet);
 $('#sheet').addEventListener('click', e => { if (e.target.id === 'sheet') closeSheet(); });
 function fmtSize(b){ return b > 1048576 ? (b / 1048576).toFixed(1).replace('.', ',') + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB'; }
-function cleanName(s){ s = (s || '').trim().replace(/[\\/:*?"<>|\u0000-\u001f]/g, '').replace(/\.pdf$/i, '').slice(0, 120); return (s || todayName()) + '.pdf'; }
+function cleanName(s, ext){ s = (s || '').trim().replace(/[\\/:*?"<>|\u0000-\u001f]/g, '').replace(/\.(pdf|jpe?g)$/i, '').slice(0, 120); return (s || todayName()) + '.' + ext; }
+
+// Ghép mọi trang thành một ảnh dọc dài, giới hạn kích thước để điện thoại vẫn mở được
+const LONG_W = {light: 1080, mid: 1440, best: 2000};
+const LONG_MAX_H = 30000, LONG_MAX_AREA = 16e6;
+async function makeLongImage(qKey, name){
+  makingPdf = true; $('#makeBtn').disabled = true; $('#result').hidden = true; $('#saveBtn').hidden = true; $('#prog').hidden = false;
+  try {
+    const want = LONG_W[qKey], parts = [];
+    for (let i = 0; i < pages.length; i++){
+      $('#ptxt').textContent = `Đang làm trang ${i+1}/${pages.length}…`; $('#pfill').style.width = (i / pages.length * 90) + '%';
+      await frame();
+      parts.push(renderPage(pages[i], want * 1.5));
+    }
+    const R = parts.reduce((s, c) => s + c.height / c.width, 0), n = parts.length;
+    const size = w => { const gap = Math.round(w * .025); return {gap, W: w + 2*gap, H: Math.round(w * R) + gap * (n + 1)}; };
+    let w = want, d = size(w);
+    while (w > 320 && (d.H > LONG_MAX_H || d.W * d.H > LONG_MAX_AREA)){ w = Math.floor(w * .92); d = size(w); }
+    $('#ptxt').textContent = 'Đang ghép ảnh…'; await frame();
+    const out = mkCanvas(d.W, d.H), x = out.getContext('2d');
+    x.fillStyle = '#e4e7e8'; x.fillRect(0, 0, d.W, d.H); x.imageSmoothingQuality = 'high';
+    let y = d.gap;
+    for (const c of parts){
+      const h = Math.round(w * c.height / c.width), src = c.width > w * 2 ? fitCanvas(c, Math.max(w, h)) : c;
+      x.fillStyle = 'rgba(0,0,0,.12)'; x.fillRect(d.gap + 2, y + 3, w, h);
+      x.drawImage(src, d.gap, y, w, h); y += h + d.gap;
+    }
+    const blob = await new Promise((res, rej) => out.toBlob(b => b ? res(b) : rej(new Error('encode')), 'image/jpeg', QUALITY[qKey].q));
+    lastPdf = {blob, name};
+    $('#pfill').style.width = '100%'; $('#prog').hidden = true;
+    $('#rExt').textContent = 'JPG';
+    const th = $('#rThumb'); if (th.src) URL.revokeObjectURL(th.src); th.src = URL.createObjectURL(blob); th.hidden = false;
+    $('#rName').textContent = name;
+    $('#rInfo').textContent = `${n} trang · ${d.W}×${d.H} px · ${fmtSize(blob.size)}` + (w < want ? ' · đã thu nhỏ cho điện thoại mở được; muốn nét hơn hãy chia ra xuất nhiều lần' : '');
+    $('#result').hidden = false; $('#saveBtn').hidden = false;
+    $('#makeBtn').textContent = 'Tạo lại với tuỳ chọn khác';
+    await saveFile(blob, name);
+  } catch (err){
+    console.error(err); $('#prog').hidden = true;
+    toast('Tạo ảnh dài bị lỗi, có thể do quá nhiều trang. Hãy chọn độ nét “Nhẹ” hoặc bớt trang.');
+  } finally { makingPdf = false; $('#makeBtn').disabled = false; }
+}
+
 $('#makeBtn').addEventListener('click', async () => {
+  if (fmtNow() === 'long'){ makeLongImage(document.querySelector('input[name="q"]:checked').value, cleanName($('#fname').value, 'jpg')); return; }
   const jsPDF = window.jspdf && window.jspdf.jsPDF;
   if (!jsPDF){ toast('Chưa tải được công cụ tạo PDF. Kiểm tra kết nối mạng rồi tải lại trang.'); return; }
   const size = document.querySelector('input[name="size"]:checked').value;
   const margin = document.querySelector('input[name="margin"]:checked').value === '1' ? 10 : 0;
   const Q = QUALITY[document.querySelector('input[name="q"]:checked').value];
-  const name = cleanName($('#fname').value);
+  const name = cleanName($('#fname').value, 'pdf');
   makingPdf = true; $('#makeBtn').disabled = true; $('#result').hidden = true; $('#saveBtn').hidden = true; $('#prog').hidden = false;
   try {
     let pdf = null;
@@ -969,6 +1115,7 @@ $('#makeBtn').addEventListener('click', async () => {
     const blob = pdf.output('blob');
     lastPdf = {blob, name};
     $('#pfill').style.width = '100%'; $('#prog').hidden = true;
+    $('#rExt').textContent = 'PDF'; $('#rThumb').hidden = true;
     $('#rName').textContent = name; $('#rInfo').textContent = `${pages.length} trang · ${fmtSize(blob.size)}`;
     $('#result').hidden = false; $('#saveBtn').hidden = false;
     $('#makeBtn').textContent = 'Tạo lại với tuỳ chọn khác';
@@ -990,7 +1137,7 @@ async function saveFile(blob, name){
   if (dl){
     try { await dl.save({filename: name, data: blob}); toast(`Đã lưu “${name}”. Xem trong thư mục Tải xuống.`); return; }
     catch (e){
-      if (e && e.code === 'declined'){ toast('Bạn đã bỏ qua việc lưu. Bấm “Lưu file PDF về máy” để lưu lại.'); return; }
+      if (e && e.code === 'declined'){ toast('Bạn đã bỏ qua việc lưu. Bấm “Lưu file về máy” để lưu lại.'); return; }
       if (e && e.code === 'rate_limited'){ toast('Đang có hộp thoại lưu file mở, chờ một chút rồi thử lại.'); return; }
     }
   }
