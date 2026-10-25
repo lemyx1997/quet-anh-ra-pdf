@@ -25,7 +25,8 @@ Sau khi cài, app có biểu tượng riêng và mở được cả khi không c
 - Chọn nhiều ảnh, kéo thả hoặc dán (Ctrl+V).
 
 **Cắt và chỉnh trang**
-- Tự tìm mép giấy và nắn thẳng.
+- Tự tìm mép giấy và nắn thẳng, kể cả giấy trên bàn sáng màu, nền trắng hay nền nhiều đồ vật. App phân biệt mép giấy với viền bảng hay dòng tiêu đề đậm bên trong tờ giấy, rồi căn từng cạnh sát mép thật. Khi không chắc, app báo "chưa thấy mép giấy" để bạn tự kéo góc, không đưa ra khung sai.
+- **Báo ảnh mờ**: mỗi trang được chấm độ nét. Trang mờ có nhãn đỏ, kèm lựa chọn Chụp lại, Chọn ảnh khác hoặc Vẫn giữ; ảnh mới thay đúng vào vị trí trang đó. Khi chụp bằng camera trong app, ảnh mờ bị bỏ ngay và app nhắc chụp lại.
 - Cắt theo tứ giác tuỳ ý:
   - kéo góc, có kính lúp để đặt chính xác;
   - vẽ khung bằng 4 lần chạm;

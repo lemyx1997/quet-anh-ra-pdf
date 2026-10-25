@@ -54,6 +54,11 @@ main{display:flex;flex-direction:column;gap:20px;padding-block:20px}
 .pno{position:absolute;left:8px;top:8px;background:var(--surface);color:var(--ink);font:600 12px/1 var(--f-body);padding:5px 8px;border-radius:999px;box-shadow:0 1px 3px rgba(0,0,0,.15);font-variant-numeric:tabular-nums}
 .tag{position:absolute;right:8px;top:8px;background:var(--ink);color:var(--surface);font:600 11px/1 var(--f-body);padding:5px 7px;border-radius:6px;letter-spacing:.04em;text-transform:uppercase}
 .acts{display:flex;justify-content:space-between;gap:2px}
+.card{position:relative}
+.blurtag{position:absolute;left:8px;right:8px;top:calc((100% - 42px) - 40px);min-height:30px;border:0;border-radius:8px;background:var(--danger);color:#fff;font:600 12.5px var(--f-body);cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.25)}
+.blurtag:hover{filter:brightness(1.08)}
+.blur-prev{display:flex;gap:12px;align-items:center}
+.blur-prev img{width:72px;height:96px;object-fit:contain;background:var(--bg);border-radius:6px;flex:none}
 .ib{width:36px;height:34px;border-radius:8px;border:0;background:transparent;display:grid;place-items:center;cursor:pointer;color:var(--muted)}
 .ib:hover{background:var(--surface);color:var(--ink)}
 .ib:disabled{opacity:.3;cursor:default;background:transparent}
@@ -349,6 +354,16 @@ fieldset{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;
   </div>
 </div>
 
+<div id="blurModal" class="sheet-back modal-back" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="blurTitle">
+    <div class="sh-head"><h2 id="blurTitle">Ảnh bị mờ</h2><button id="blurClose" class="x" type="button" aria-label="Đóng">×</button></div>
+    <div class="blur-prev"><img id="blurImg" alt="Trang bị mờ"><p class="small-note" id="blurTxt" style="font-size:14.5px;color:var(--ink)"></p></div>
+    <p class="small-note">Mẹo: giữ chắc tay, để đủ sáng, chạm vào tờ giấy trên màn hình để máy lấy nét rồi mới chụp.</p>
+    <button id="blurRetake" class="btn primary wide" type="button">Chụp lại trang này</button>
+    <div class="row2"><button id="blurPick" class="btn" type="button">Chọn ảnh khác</button><button id="blurKeep" class="btn" type="button">Vẫn giữ</button></div>
+  </div>
+</div>
+
 <div id="toast" class="toast" role="status" hidden><span id="toastTxt"></span><button id="toastBtn" type="button" hidden>Hoàn tác</button></div>
 <div id="dropHint" class="drop-hint" hidden>Thả ảnh vào đây</div>
 
@@ -507,52 +522,433 @@ function orderCorners(q){
   let k = 0; s.forEach((p, i) => { if (p[0]+p[1] < s[k][0]+s[k][1]) k = i; });
   return s.slice(k).concat(s.slice(0, k));
 }
-function detectCorners(srcCanvas){
-  const t = fitCanvas(srcCanvas, 360), w = t.width, h = t.height, N = w*h;
-  const d = ctx2d(t).getImageData(0, 0, w, h).data;
-  let g = new Float32Array(N);
-  for (let i = 0; i < N; i++) g[i] = d[i*4]*.299 + d[i*4+1]*.587 + d[i*4+2]*.114;
-  g = boxBlur(g, w, h, 2);
-  // Ngưỡng Otsu tách giấy khỏi nền
-  const hist = new Float64Array(256); for (let i = 0; i < N; i++) hist[Math.min(255, g[i] | 0)]++;
+/* Cách tìm tờ giấy:
+   1) thử nhiều cách tách vùng giấy: theo độ sáng (hai chiều), theo khác màu so với nền ở viền ảnh,
+      và theo đường viền khép kín (giấy trắng trên bàn trắng vẫn có mép);
+   2) với mỗi khung tìm được, căn thẳng từng cạnh theo đúng mép sáng-tối thật rồi lấy giao điểm làm góc;
+   3) chọn khung có 4 cạnh trùng với mép rõ nhất; cuối cùng căn lại ở độ phân giải cao cho góc thật sát. */
+const DET_SIZE = 480;
+function otsuT(a){
+  let mn = Infinity, mx = -Infinity;
+  for (let i = 0; i < a.length; i++){ const v = a[i]; if (v < mn) mn = v; if (v > mx) mx = v; }
+  const span = mx - mn || 1, hist = new Float64Array(256), N = a.length;
+  for (let i = 0; i < N; i++) hist[Math.min(255, ((a[i] - mn) / span * 255) | 0)]++;
   let sum = 0; for (let i = 0; i < 256; i++) sum += i * hist[i];
-  let sumB = 0, wB = 0, best = 0, T = 128;
+  let sB = 0, wB = 0, best = -1, T = 128;
   for (let i = 0; i < 256; i++){
     wB += hist[i]; if (!wB) continue; const wF = N - wB; if (!wF) break;
-    sumB += i * hist[i]; const mB = sumB / wB, mF = (sum - sumB) / wF, v = wB * wF * (mB - mF) ** 2;
+    sB += i * hist[i]; const v = wB * wF * (sB / wB - (sum - sB) / wF) ** 2;
     if (v > best){ best = v; T = i; }
   }
-  let cand = null;
-  for (const bright of [true, false]){
-    const m = new Uint8Array(N); for (let i = 0; i < N; i++) m[i] = (g[i] > T) === bright ? 1 : 0;
-    const e = erode(m, w, h);
-    // hạt giống gần tâm ảnh
-    let seed = -1, sd = Infinity;
-    for (let y = Math.floor(h*.3); y < h*.7; y++) for (let x = Math.floor(w*.3); x < w*.7; x++){
-      if (e[y*w+x]){ const dd = (x - w/2)**2 + (y - h/2)**2; if (dd < sd){ sd = dd; seed = y*w + x; } }
-    }
-    if (seed < 0) continue;
-    const stack = new Int32Array(N), rmin = new Int32Array(h).fill(w), rmax = new Int32Array(h).fill(-1);
-    let sp = 0, count = 0; stack[sp++] = seed; e[seed] = 2;
+  return mn + (T + .5) / 255 * span;
+}
+function sobel(g, w, h){
+  const N = w*h, gx = new Float32Array(N), gy = new Float32Array(N), mag = new Float32Array(N); let s = 0;
+  for (let y = 1; y < h-1; y++) for (let x = 1; x < w-1; x++){
+    const i = y*w + x, a = g[i-w-1], b = g[i-w], c = g[i-w+1], d = g[i-1], f = g[i+1], p = g[i+w-1], q = g[i+w], r = g[i+w+1];
+    const sx = (c + 2*f + r) - (a + 2*d + p), sy = (p + 2*q + r) - (a + 2*b + c);
+    gx[i] = sx; gy[i] = sy; const m = Math.sqrt(sx*sx + sy*sy); mag[i] = m; s += m;
+  }
+  return {gx, gy, mag, w, h, mean: s / Math.max(1, (w-2) * (h-2))};
+}
+function dilate(m, w, h){
+  const o = new Uint8Array(m.length);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++){
+    const i = y*w + x; if (!m[i]) continue;
+    for (let dy = -1; dy <= 1; dy++){ const yy = y + dy; if (yy < 0 || yy >= h) continue; for (let dx = -1; dx <= 1; dx++){ const xx = x + dx; if (xx >= 0 && xx < w) o[yy*w + xx] = 1; } }
+  }
+  return o;
+}
+// Vùng lớn nhất (điểm có giá trị 1) đi qua khu giữa ảnh: mép trái/phải của từng hàng
+function centerComp(m, w, h){
+  const N = w*h, stack = new Int32Array(N);
+  let best = null;
+  for (let y0 = Math.floor(h*.3); y0 < h*.7; y0 += 3) for (let x0 = Math.floor(w*.3); x0 < w*.7; x0 += 3){
+    const seed = y0*w + x0; if (m[seed] !== 1) continue;
+    const rmin = new Int32Array(h).fill(w), rmax = new Int32Array(h).fill(-1);
+    let sp = 0, count = 0; stack[sp++] = seed; m[seed] = 2;
     while (sp){
       const i = stack[--sp], x = i % w, y = (i / w) | 0; count++;
       if (x < rmin[y]) rmin[y] = x; if (x > rmax[y]) rmax[y] = x;
-      if (x > 0 && e[i-1] === 1){ e[i-1] = 2; stack[sp++] = i-1; }
-      if (x < w-1 && e[i+1] === 1){ e[i+1] = 2; stack[sp++] = i+1; }
-      if (y > 0 && e[i-w] === 1){ e[i-w] = 2; stack[sp++] = i-w; }
-      if (y < h-1 && e[i+w] === 1){ e[i+w] = 2; stack[sp++] = i+w; }
+      if (x > 0 && m[i-1] === 1){ m[i-1] = 2; stack[sp++] = i-1; }
+      if (x < w-1 && m[i+1] === 1){ m[i+1] = 2; stack[sp++] = i+1; }
+      if (y > 0 && m[i-w] === 1){ m[i-w] = 2; stack[sp++] = i-w; }
+      if (y < h-1 && m[i+w] === 1){ m[i+w] = 2; stack[sp++] = i+w; }
     }
-    const ratio = count / N; if (ratio < .1 || ratio > .985) continue;
-    const pts = []; for (let y = 0; y < h; y++) if (rmax[y] >= 0){ pts.push([rmin[y], y], [rmax[y] + 1, y]); }
-    const quad = maxQuad(convexHull(pts)); if (!quad) continue;
-    const fill = count / Math.max(1, polyArea(quad)); if (fill < .8) continue;
-    const score = fill * Math.sqrt(ratio) * (bright ? 1.05 : 1);
-    if (!cand || score > cand.score) cand = {score, quad};
+    if (!best || count > best.count) best = {count, rmin, rmax};
   }
-  if (!cand) return {corners: FULL.map(p => p.slice()), found: false};
-  const q = cand.quad, cx = q.reduce((s, p) => s + p[0], 0) / 4, cy = q.reduce((s, p) => s + p[1], 0) / 4;
-  const grown = q.map(([x, y]) => { const dx = x - cx, dy = y - cy, l = Math.hypot(dx, dy) || 1; return [x + dx/l*1.3, y + dy/l*1.3]; });
-  const corners = orderCorners(grown).map(([x, y]) => [Math.min(1, Math.max(0, x / w)), Math.min(1, Math.max(0, y / h))]);
+  return best;
+}
+function compQuad(comp, w, h){
+  if (!comp) return null;
+  const ratio = comp.count / (w*h); if (ratio < .04 || ratio > .985) return null;
+  const pts = []; for (let y = 0; y < h; y++) if (comp.rmax[y] >= 0) pts.push([comp.rmin[y], y], [comp.rmax[y] + 1, y]);
+  const quad = maxQuad(convexHull(pts)); if (!quad) return null;
+  if (comp.count / Math.max(1, polyArea(quad)) < .72) return null;
+  return orderCorners(quad);
+}
+function candidateQuads(gm, rgb, G, w, h){
+  const N = w*h, out = [];
+  // a) theo độ sáng: giấy sáng hơn nền, hoặc tối hơn nền
+  const T = otsuT(gm);
+  for (const bright of [true, false]){
+    const m = new Uint8Array(N); for (let i = 0; i < N; i++) m[i] = (gm[i] > T) === bright ? 1 : 0;
+    out.push(compQuad(centerComp(erode(m, w, h), w, h), w, h));
+  }
+  // b) theo khác màu so với nền: màu nền ước lượng từ dải viền quanh ảnh
+  const bw = Math.max(2, Math.round(Math.min(w, h) * .04)), S = [[], [], []];
+  for (let y = 0; y < h; y += 2) for (let x = 0; x < w; x += 2){
+    if (x >= bw && x < w - bw && y >= bw && y < h - bw) continue;
+    const i = y*w + x; S[0].push(rgb[0][i]); S[1].push(rgb[1][i]); S[2].push(rgb[2][i]);
+  }
+  const med = S.map(a => { a.sort((p, q) => p - q); return a[a.length >> 1] || 0; });
+  const dist = new Float32Array(N);
+  for (let i = 0; i < N; i++) dist[i] = Math.hypot(rgb[0][i] - med[0], rgb[1][i] - med[1], rgb[2][i] - med[2]);
+  // ngưỡng theo độ dao động màu của chính nền ở viền ảnh (giấy kín chữ đen vẫn được tính cả khối là giấy)
+  const bd = []; for (let k = 0; k < S[0].length; k++) bd.push(Math.hypot(S[0][k] - med[0], S[1][k] - med[1], S[2][k] - med[2]));
+  bd.sort((p, q) => p - q);
+  const Tb = Math.max(18, (bd[Math.floor(bd.length * .9)] || 0) * 1.3 + 8);
+  for (const T2 of [otsuT(dist), Tb]){
+    const md = new Uint8Array(N);
+    for (let i = 0; i < N; i++) md[i] = dist[i] > T2 ? 1 : 0;
+    out.push(compQuad(centerComp(erode(md, w, h), w, h), w, h));
+  }
+  // c) theo đường viền khép kín: vùng ở giữa mà đi từ viền ảnh vào không chạm tới được
+  const thr = Math.max(G.mean * 2, 20);
+  let e = new Uint8Array(N); for (let i = 0; i < N; i++) e[i] = G.mag[i] > thr ? 1 : 0;
+  e = dilate(dilate(e, w, h), w, h);
+  const reach = new Uint8Array(N), stack = new Int32Array(N); let sp = 0;
+  const push = i => { if (!reach[i] && !e[i]){ reach[i] = 1; stack[sp++] = i; } };
+  for (let x = 0; x < w; x++){ push(x); push((h-1)*w + x); }
+  for (let y = 0; y < h; y++){ push(y*w); push(y*w + w - 1); }
+  while (sp){
+    const i = stack[--sp], x = i % w;
+    if (x > 0) push(i-1); if (x < w-1) push(i+1); if (i >= w) push(i-w); if (i < N - w) push(i+w);
+  }
+  const me = new Uint8Array(N); for (let i = 0; i < N; i++) me[i] = reach[i] ? 0 : 1;
+  out.push(compQuad(centerComp(me, w, h), w, h));
+  return out.filter(Boolean);
+}
+function fitLine(pts){
+  let mx = 0, my = 0; for (const p of pts){ mx += p[0]; my += p[1]; } mx /= pts.length; my /= pts.length;
+  let sxx = 0, sxy = 0, syy = 0; for (const p of pts){ const dx = p[0] - mx, dy = p[1] - my; sxx += dx*dx; sxy += dx*dy; syy += dy*dy; }
+  const a = .5 * Math.atan2(2*sxy, sxx - syy);
+  return {x: mx, y: my, dx: Math.cos(a), dy: Math.sin(a)};
+}
+const lineDist = (L, p) => Math.abs((p[0] - L.x) * L.dy - (p[1] - L.y) * L.dx);
+function intersectLines(L1, L2){
+  const den = L1.dx * L2.dy - L1.dy * L2.dx; if (Math.abs(den) < 1e-6) return null;
+  const t = ((L2.x - L1.x) * L2.dy - (L2.y - L1.y) * L2.dx) / den;
+  return [L1.x + L1.dx * t, L1.y + L1.dy * t];
+}
+const quadCenter = q => [q.reduce((s, p) => s + p[0], 0) / 4, q.reduce((s, p) => s + p[1], 0) / 4];
+// Phương pháp tuyến hướng ra ngoài khung của cạnh A→B
+function sideFrame(A, B, c){
+  const len = Math.hypot(B[0] - A[0], B[1] - A[1]) || 1, dx = (B[0] - A[0]) / len, dy = (B[1] - A[1]) / len;
+  let nx = -dy, ny = dx;
+  if (((A[0] + B[0]) / 2 - c[0]) * nx + ((A[1] + B[1]) / 2 - c[1]) * ny < 0){ nx = -nx; ny = -ny; }
+  return {len, nx, ny};
+}
+// Đọc giá trị ảnh tại điểm lẻ (nội suy song tuyến)
+function sampleAt(a, w, h, x, y){
+  if (x < 0) x = 0; else if (x > w - 1.001) x = w - 1.001;
+  if (y < 0) y = 0; else if (y > h - 1.001) y = h - 1.001;
+  const ix = x | 0, iy = y | 0, fx = x - ix, fy = y - iy, i = iy*w + ix;
+  return (a[i] * (1 - fx) + a[i+1] * fx) * (1 - fy) + (a[i+w] * (1 - fx) + a[i+w+1] * fx) * fy;
+}
+// "Bậc" sáng-tối qua điểm (x,y) theo hướng n: ngoài trừ trong, cách nhau 2d điểm ảnh.
+// Mép giấy là một bậc thật (hai bên khác nhau); nét kẻ mảnh hai bên đều là giấy nên gần bằng 0.
+const stepAt = (I, w, h, x, y, nx, ny, d) => sampleAt(I, w, h, x + nx * d, y + ny * d) - sampleAt(I, w, h, x - nx * d, y - ny * d);
+// Căn từng cạnh theo mép thật trong dải ±R điểm ảnh rồi lấy giao điểm các cạnh làm góc
+function refineQuad(q, I, w, h, R, d){
+  const c = quadCenter(q), lines = [], MIN = 5, sides = [];
+  for (let i = 0; i < 4; i++){
+    const A = q[i], B = q[(i+1) % 4], {len, nx, ny} = sideFrame(A, B, c);
+    if (len < 12){ sides.push(null); continue; }
+    const K = Math.max(16, Math.min(70, Math.round(len / 4))), samples = [];
+    let signSum = 0, nearSum = 0, nearAbs = 0;
+    for (let k = 0; k < K; k++){
+      const s = .08 + .84 * k / (K - 1), bx = A[0] + (B[0] - A[0]) * s, by = A[1] + (B[1] - A[1]) * s, cand = [];
+      let near = 0;
+      for (let o = -R; o <= R; o++){
+        const x = bx + nx * o, y = by + ny * o;
+        if (x < 1 || y < 1 || x >= w - 2 || y >= h - 2) continue;
+        const v = stepAt(I, w, h, x, y, nx, ny, d);
+        cand.push([v, o]);
+        if (Math.abs(o) <= 2 && Math.abs(v) > Math.abs(near)) near = v;
+      }
+      let best = null; for (const cd of cand) if (!best || Math.abs(cd[0]) > Math.abs(best[0])) best = cd;
+      if (best && Math.abs(best[0]) > MIN) signSum += best[0];
+      if (Math.abs(near) > MIN){ nearSum += near; nearAbs += Math.abs(near); }
+      samples.push({bx, by, cand});
+    }
+    // chiều sáng-tối lấy theo chính chỗ cạnh đang đứng (nếu ở đó có mép rõ), để không bị một đường đậm
+    // ngược chiều bên trong tờ giấy (dòng tiêu đề, viền bảng) kéo đi
+    const sg = (nearAbs > MIN * K * .3 && Math.abs(nearSum) > nearAbs * .5) ? Math.sign(nearSum) : (Math.sign(signSum) || 1);
+    sides.push({K, nx, ny, samples, sg});
+  }
+  for (const sd of sides){
+    if (!sd){ lines.push(null); continue; }
+    // mép giấy có một chiều sáng-tối nhất quán dọc cạnh; chữ in có cả hai chiều nên bị loại bớt
+    const {K, nx, ny, samples, sg} = sd, pts = [];
+    for (const sm of samples){
+      let bv = 0, bo = 0;
+      for (const [v, o] of sm.cand){ if (Math.sign(v) !== sg) continue; const sc = Math.abs(v) * (1 - .35 * Math.abs(o) / R); if (sc > bv){ bv = sc; bo = o; } }
+      if (bv > MIN) pts.push([sm.bx + nx * bo, sm.by + ny * bo]);
+    }
+    if (pts.length < Math.max(6, K * .3)){ lines.push(null); continue; }
+    let L = fitLine(pts);
+    for (const tol of [2.5, 1.5]){ const keep = pts.filter(p => lineDist(L, p) <= tol); if (keep.length >= 6) L = fitLine(keep); }
+    lines.push(L);
+  }
+  const nq = q.map((p, i) => {
+    const L1 = lines[(i + 3) % 4], L2 = lines[i];
+    let r = null;
+    if (L1 && L2) r = intersectLines(L1, L2);
+    else if (L1 || L2){ const L = L1 || L2, t = (p[0] - L.x) * L.dx + (p[1] - L.y) * L.dy; r = [L.x + L.dx * t, L.y + L.dy * t]; }
+    if (!r || Math.hypot(r[0] - p[0], r[1] - p[1]) > R * 2.5) return p;
+    return [Math.min(w, Math.max(0, r[0])), Math.min(h, Math.max(0, r[1]))];
+  });
+  return isConvex(nq) ? nq : q;
+}
+// Một cạnh A→B có phải mép thật không: tỉ lệ điểm dọc cạnh mà hai bên khác màu rõ, cùng một chiều sáng-tối
+function sideSupport(A, B, nx, ny, im, d, N, minC){
+  const {w, h, r, g, b, y: Y} = im; let pos = 0, neg = 0;
+  minC = minC || 10;
+  for (let k = 0; k < N; k++){
+    const s = .06 + .88 * k / (N - 1), bx = A[0] + (B[0] - A[0]) * s, by = A[1] + (B[1] - A[1]) * s;
+    let best = 0, bsg = 0;
+    for (let o = -1; o <= 1; o++){
+      const x = bx + nx * o, y = by + ny * o, ox = x + nx * d, oy = y + ny * d, ix = x - nx * d, iy = y - ny * d;
+      if (ox < 0 || oy < 0 || ox > w - 1 || oy > h - 1 || ix < 0 || iy < 0 || ix > w - 1 || iy > h - 1) continue;
+      const dc = Math.hypot(sampleAt(r, w, h, ox, oy) - sampleAt(r, w, h, ix, iy), sampleAt(g, w, h, ox, oy) - sampleAt(g, w, h, ix, iy), sampleAt(b, w, h, ox, oy) - sampleAt(b, w, h, ix, iy));
+      if (dc > best){ best = dc; bsg = Math.sign(sampleAt(Y, w, h, ox, oy) - sampleAt(Y, w, h, ix, iy)); }
+    }
+    if (best > minC){ if (bsg > 0) pos++; else if (bsg < 0) neg++; }
+  }
+  return Math.max(pos, neg) / N;
+}
+// Màu giấy của khung: trung bình phần sáng nhất trong lưới điểm bên trong (bỏ qua chữ in)
+function paperColor(q, im){
+  const {w, h, r, g, b, y: Y} = im, [A, B, C, D, E, F, G2, H2] = sqToQuad(q), s = [];
+  for (let i = 0; i < 9; i++) for (let j = 0; j < 9; j++){
+    const u = .1 + .8 * i / 8, v = .1 + .8 * j / 8, den = G2 * u + H2 * v + 1, x = (A * u + B * v + C) / den, y = (D * u + E * v + F) / den;
+    s.push([sampleAt(Y, w, h, x, y), sampleAt(r, w, h, x, y), sampleAt(g, w, h, x, y), sampleAt(b, w, h, x, y)]);
+  }
+  s.sort((p, q2) => q2[0] - p[0]);
+  const top = s.slice(0, Math.max(5, Math.round(s.length * .35)));
+  return [0, 1, 2, 3].map(k => top.reduce((t, p) => t + p[k], 0) / top.length);
+}
+// Đẩy từng cạnh ra ngoài tới mép rõ xa nhất, miễn dải ở giữa vẫn "trông như giấy" (sáng như giấy).
+// Sửa trường hợp mép giấy mờ (giấy trên bàn sáng màu) mà bên trong có viền bảng, dòng kẻ đậm.
+function expandQuad(q, im, d){
+  const {w, h, r, g, b, y: Y} = im, diag = Math.hypot(w, h), cur = q.map(p => p.slice()), S = [.2, .35, .5, .65, .8];
+  const px = (x, y) => (x < 0 || y < 0 || x > w - 1 || y > h - 1) ? null : [sampleAt(Y, w, h, x, y), sampleAt(r, w, h, x, y), sampleAt(g, w, h, x, y), sampleAt(b, w, h, x, y)];
+  // màu giấy ngay tại chỗ: điểm sáng nhất ngay bên trong (giữa các dòng chữ luôn có giấy trắng)
+  const localPaper = (x, y, nx, ny) => {
+    let best = null;
+    for (let k = 2; k <= 10; k += 2){ const p = px(x - nx * d * k, y - ny * d * k); if (p && (!best || p[0] > best[0])) best = p; }
+    return best;
+  };
+  // "giống giấy": mức chặt (gần như y hệt) để nhận ra phía ngoài một mép thật; mức lỏng để đi qua dải có chữ
+  const like = (p, ref, tight) => {
+    if (!p || !ref) return false;
+    const dy = ref[0] - p[0], dc = Math.hypot(p[1] - ref[1], p[2] - ref[2], p[3] - ref[3]);
+    return tight ? dy < 8 && dc < 14 : dy < 35 && dc < 50;
+  };
+  for (let i = 0; i < 4; i++){
+    const c = quadCenter(cur), A = cur[i], B = cur[(i+1) % 4], {len, nx, ny} = sideFrame(A, B, c);
+    if (len < 20) continue;
+    const at = (s, off) => [A[0] + (B[0] - A[0]) * s + nx * off, A[1] + (B[1] - A[1]) * s + ny * off];
+    const ref = S.map(s => { const [x, y] = at(s, 0); return localPaper(x, y, nx, ny); });
+    // phía ngoài là giấy nếu trong một dải bên ngoài có điểm đúng màu giấy (khe trắng giữa các dòng chữ);
+    // mặt bàn thì cả dải đều khác màu giấy
+    const outerPaper = off => S.filter((s, k) => {
+      let bestP = null;
+      for (let j = 2; j <= 8; j += 2){ const p = px(...at(s, off + d * j + 1)); if (p && (!bestP || p[0] > bestP[0])) bestP = p; }
+      return like(bestP, ref[k], true);
+    }).length;
+    // phía ngoài cạnh hiện tại không còn đúng màu giấy: cạnh này là mép giấy thật, giữ nguyên
+    if (outerPaper(0) < 3) continue;
+    const maxOff = Math.round(diag * .3);
+    let bestOff = 0, misses = 0;
+    for (let off = 3; off <= maxOff; off++){
+      const A2 = at(0, off), B2 = at(1, off);
+      if (Math.min(A2[0], B2[0]) < -2 || Math.min(A2[1], B2[1]) < -2 || Math.max(A2[0], B2[0]) > w + 1 || Math.max(A2[1], B2[1]) > h + 1){
+        // dải vẫn là giấy cho tới mép ảnh: tờ giấy kéo dài ra ngoài khung, đặt cạnh ở mép ảnh
+        if (misses <= 2) bestOff = off - 1;
+        break;
+      }
+      // dải mới phía trong mép đang thử phải giống giấy (cho phép vài dòng chữ); màu tham chiếu đổi dần theo ánh sáng
+      let likes = 0;
+      S.forEach((s, k) => { const p = px(...at(s, off - d - 1)); if (like(p, ref[k], false)){ likes++; if (p[0] > ref[k][0] - 13) ref[k] = ref[k].map((v, j) => v * .7 + p[j] * .3); } });
+      if (likes >= 3) misses = 0; else if (++misses > Math.max(6, d * 3)) break;
+      // bỏ qua dải sát cạnh cũ (vẫn là chính đường đó)
+      if (off % 2 || off < 2 * d + 4) continue;
+      // mép thật đầu tiên: hai bên khác nhau rõ, và phía ngoài gần như không còn chỗ nào đúng màu giấy
+      if (sideSupport(A2, B2, nx, ny, im, d, 24, 6) >= .6 && outerPaper(off) <= 1){ bestOff = off; break; }
+    }
+    if (bestOff){ cur[i] = [A[0] + nx * bestOff, A[1] + ny * bestOff]; cur[(i+1) % 4] = [B[0] + nx * bestOff, B[1] + ny * bestOff]; }
+  }
+  const out = cur.map(([x, y]) => [Math.min(w, Math.max(0, x)), Math.min(h, Math.max(0, y))]);
+  return isConvex(out) ? out : q;
+}
+// Điểm của khung: trung bình và cạnh yếu nhất của mức "mép thật" bốn cạnh
+function stepScore(q, im, d, N){
+  const {w, h, r, g, b, y: Y} = im, c = quadCenter(q);
+  N = N || 48;
+  const pos = [0, 0, 0, 0], neg = [0, 0, 0, 0], border = [false, false, false, false];
+  for (let i = 0; i < 4; i++){
+    const A = q[i], B = q[(i+1) % 4], {nx, ny} = sideFrame(A, B, c);
+    // cạnh nằm sát mép ảnh (giấy lẹm ra ngoài khung): không có mép để đo
+    border[i] = (Math.abs(A[0] - B[0]) < 4 && (A[0] < 4 || A[0] > w - 5)) || (Math.abs(A[1] - B[1]) < 4 && (A[1] < 4 || A[1] > h - 5));
+    if (border[i]) continue;
+    {
+      for (let k = 0; k < N; k++){
+        const s = .04 + .92 * k / (N - 1), bx = A[0] + (B[0] - A[0]) * s, by = A[1] + (B[1] - A[1]) * s;
+        let best = 0, bsg = 0, bo = 0;
+        for (let o = -1; o <= 1; o++){
+          const x = bx + nx * o, y = by + ny * o, ox = x + nx * d, oy = y + ny * d, ix = x - nx * d, iy = y - ny * d;
+          if (ox < 0 || oy < 0 || ox > w - 1 || oy > h - 1 || ix < 0 || iy < 0 || ix > w - 1 || iy > h - 1) continue;
+          const dc = Math.hypot(sampleAt(r, w, h, ox, oy) - sampleAt(r, w, h, ix, iy), sampleAt(g, w, h, ox, oy) - sampleAt(g, w, h, ix, iy), sampleAt(b, w, h, ox, oy) - sampleAt(b, w, h, ix, iy));
+          if (dc > best){ best = dc; bo = o; bsg = Math.sign(sampleAt(Y, w, h, ox, oy) - sampleAt(Y, w, h, ix, iy)); }
+        }
+        if (best > 10){ if (bsg > 0) pos[i]++; else if (bsg < 0) neg[i]++; }
+      }
+    }
+  }
+  // đúng một cạnh nằm trên mép ảnh (giấy lẹm ra ngoài khung): chấm theo ba cạnh kia;
+  // nhiều cạnh trên mép ảnh thường là khung sai (lấy cả ảnh) nên chỉ được điểm thấp
+  const nb = border.filter(Boolean).length, real = [0, 1, 2, 3].filter(i => !border[i]).map(i => Math.max(pos[i], neg[i]) / N);
+  const borderVal = nb === 1 ? Math.min(.85, real.reduce((s, v) => s + v, 0) / 3) : .5;
+  let tot = 0, mn = 1;
+  for (let i = 0; i < 4; i++){
+    const sup = border[i] ? borderVal : Math.max(pos[i], neg[i]) / N;
+    tot += sup; mn = Math.min(mn, sup);
+  }
+  return .6 * tot / 4 + .4 * mn;
+}
+// Dò các đường thẳng dài (biến đổi Hough theo hướng mép) rồi ghép 4 đường thành khung
+function lineQuads(G, im, w, h, d){
+  const {gx, gy, mag, mean} = G, NT = 180, diag = Math.hypot(w, h), NR = Math.ceil(2 * diag) + 1;
+  const acc = new Float32Array(NT * NR), cs = new Float32Array(NT), sn = new Float32Array(NT);
+  for (let t = 0; t < NT; t++){ cs[t] = Math.cos(t * Math.PI / NT); sn[t] = Math.sin(t * Math.PI / NT); }
+  const thr = Math.max(mean * 1.5, 16);
+  for (let y = 2; y < h - 2; y++) for (let x = 2; x < w - 2; x++){
+    const i = y*w + x, m = mag[i]; if (m < thr) continue;
+    let a = Math.atan2(gy[i], gx[i]); if (a < 0) a += Math.PI;
+    const bin = Math.round(a / Math.PI * NT) % NT;
+    for (let db = -2; db <= 2; db++){
+      const t = (bin + db + NT) % NT, rr = Math.round(x * cs[t] + y * sn[t] + diag);
+      acc[t * NR + rr] += m * (db ? .5 : 1);
+    }
+  }
+  const lines = [];
+  for (let k = 0; k < 22; k++){
+    let bi = -1, bv = 0; for (let i = 0; i < acc.length; i++) if (acc[i] > bv){ bv = acc[i]; bi = i; }
+    if (bi < 0 || bv < diag * mean * .08) break;
+    const t = (bi / NR) | 0, rr = bi % NR - diag;
+    lines.push({x: rr * cs[t], y: rr * sn[t], dx: -sn[t], dy: cs[t], ang: t});
+    for (let dt = -6; dt <= 6; dt++){
+      const tt = t + dt, wrap = tt < 0 || tt >= NT, t2 = (tt + NT) % NT, r0 = Math.round((wrap ? -rr : rr) + diag);
+      for (let dr = -10; dr <= 10; dr++){ const r2 = r0 + dr; if (r2 >= 0 && r2 < NR) acc[t2 * NR + r2] = 0; }
+    }
+  }
+  // thêm 4 mép ảnh làm đường dự phòng khi giấy lẹm ra ngoài khung
+  lines.push({x: 0, y: 0, dx: 1, dy: 0, ang: 90}, {x: 0, y: h - 1, dx: 1, dy: 0, ang: 90}, {x: 0, y: 0, dx: 0, dy: 1, ang: 0}, {x: w - 1, y: 0, dx: 0, dy: 1, ang: 0});
+  const angDiff = (a, b) => { const v = Math.abs(a - b) % 180; return Math.min(v, 180 - v); };
+  const cxy = [w / 2, h / 2], minSep = Math.min(w, h) * .2, pairs = [];
+  for (let i = 0; i < lines.length; i++) for (let j = i + 1; j < lines.length; j++){
+    const A = lines[i], B = lines[j];
+    if (angDiff(A.ang, B.ang) > 30) continue;
+    const da = (cxy[0] - A.x) * A.dy - (cxy[1] - A.y) * A.dx, db = (cxy[0] - B.x) * B.dy - (cxy[1] - B.y) * B.dx;
+    // tâm ảnh phải nằm giữa hai đường, và hai đường cách nhau đủ xa
+    const pa = Math.abs(da), pb = Math.abs(db);
+    if (Math.sign(da) === Math.sign(db * (A.dx * B.dx + A.dy * B.dy >= 0 ? 1 : -1)) || pa + pb < minSep * 2) continue;
+    pairs.push([A, B, (A.ang + (angDiff(A.ang, B.ang) < 90 ? 0 : 0))]);
+  }
+  const quads = [];
+  for (let i = 0; i < pairs.length; i++) for (let j = i + 1; j < pairs.length; j++){
+    const [A1, A2] = pairs[i], [B1, B2] = pairs[j];
+    const ad = angDiff(A1.ang, B1.ang); if (ad < 55) continue;
+    const pts = [intersectLines(A1, B1), intersectLines(A1, B2), intersectLines(A2, B2), intersectLines(A2, B1)];
+    if (pts.some(p => !p || p[0] < -w * .02 || p[1] < -h * .02 || p[0] > w * 1.02 || p[1] > h * 1.02)) continue;
+    const q = orderCorners(pts.map(([x, y]) => [Math.min(w, Math.max(0, x)), Math.min(h, Math.max(0, y))]));
+    if (!isConvex(q)) continue;
+    const area = polyArea(q) / (w*h); if (area < .08 || area > .985) continue;
+    quads.push({q, s: stepScore(q, im, d, 20) + .12 * Math.sqrt(area)});
+  }
+  quads.sort((a, b) => b.s - a.s);
+  return quads.slice(0, 4).map(o => o.q);
+}
+function detectFast(srcCanvas){
+  const t = fitCanvas(srcCanvas, 320), im = grayOf(t), w = im.w, h = im.h;
+  const g1 = boxBlur(im.y, w, h, 1), gm = boxBlur(im.y, w, h, 2), G = sobel(g1, w, h);
+  const rgb = [boxBlur(im.r, w, h, 2), boxBlur(im.g, w, h, 2), boxBlur(im.b, w, h, 2)];
+  const imB = {w, h, r: rgb[0], g: rgb[1], b: rgb[2], y: gm}, diag = Math.hypot(w, h), d = 2;
+  let best = null;
+  for (const q0 of candidateQuads(gm, rgb, G, w, h)){
+    const q = refineQuad(q0, g1, w, h, Math.round(diag * .025), d);
+    if (onBorderCount(q, w, h) >= 2) continue;
+    const area = polyArea(q) / (w*h); if (area < .04) continue;
+    const score = stepScore(q, imB, d, 24) + .12 * Math.sqrt(area);
+    if (!best || score > best.score) best = {q, score};
+  }
+  if (!best || best.score < .4) return {corners: FULL.map(p => p.slice()), found: false};
+  return {corners: orderCorners(best.q).map(([x, y]) => [Math.min(1, Math.max(0, x / w)), Math.min(1, Math.max(0, y / h))]), found: true};
+}
+function onBorderCount(q, w, h){
+  let n = 0;
+  for (let i = 0; i < 4; i++){
+    const A = q[i], B = q[(i+1) % 4];
+    if ((Math.abs(A[0] - B[0]) < 4 && (A[0] < 4 || A[0] > w - 5)) || (Math.abs(A[1] - B[1]) < 4 && (A[1] < 4 || A[1] > h - 5))) n++;
+  }
+  return n;
+}
+function grayOf(c){
+  const w = c.width, h = c.height, d = ctx2d(c).getImageData(0, 0, w, h).data, N = w*h;
+  const r = new Float32Array(N), g = new Float32Array(N), b = new Float32Array(N), y = new Float32Array(N);
+  for (let i = 0; i < N; i++){ r[i] = d[i*4]; g[i] = d[i*4+1]; b[i] = d[i*4+2]; y[i] = r[i]*.299 + g[i]*.587 + b[i]*.114; }
+  return {w, h, r, g, b, y};
+}
+// fast = true: bản rút gọn cho lúc ngắm camera (chỉ để vẽ khung xanh); ảnh chụp vẫn dò đầy đủ
+function detectCorners(srcCanvas, fast){
+  if (fast) return detectFast(srcCanvas);
+  const t = fitCanvas(srcCanvas, DET_SIZE), im = grayOf(t), w = im.w, h = im.h;
+  const g1 = boxBlur(im.y, w, h, 1), gm = boxBlur(im.y, w, h, 2), G = sobel(g1, w, h);
+  const rgb = [boxBlur(im.r, w, h, 2), boxBlur(im.g, w, h, 2), boxBlur(im.b, w, h, 2)];
+  const imB = {w, h, r: rgb[0], g: rgb[1], b: rgb[2], y: gm};
+  const diag = Math.hypot(w, h), d = Math.max(2, Math.round(diag * .005));
+  // bỏ các phương án gần như trùng nhau (4 góc lệch dưới 3%) cho nhanh
+  const cands = [];
+  for (const q of candidateQuads(gm, rgb, G, w, h).concat(lineQuads(G, imB, w, h, d))){
+    if (!cands.some(o => o.every((p, i) => Math.hypot(p[0] - q[i][0], p[1] - q[i][1]) < diag * .03))) cands.push(q);
+  }
+  let best = null;
+  for (const q0 of cands){
+    const polish = q => refineQuad(refineQuad(q, g1, w, h, Math.max(3, Math.round(diag * .012)), d), g1, w, h, Math.max(3, Math.round(diag * .008)), Math.max(2, d - 1));
+    const rate = q => { const area = polyArea(q) / (w*h); return area < .04 ? -1 : stepScore(q, imB, d) + .12 * Math.sqrt(area); };
+    const qa = polish(refineQuad(q0, g1, w, h, Math.round(diag * .03), d)), sa = rate(qa);
+    const qb = polish(expandQuad(qa, imB, d)), sb = rate(qb);
+    // bản đã đẩy cạnh ra mép thật được ưu tiên, trừ khi điểm kém hẳn
+    const pick = sb >= sa - .15 ? {q: qb, score: sb} : {q: qa, score: sa};
+    if (pick.score < 0) continue;
+    // khung có từ 2 cạnh trở lên nằm trên mép ảnh gần như là "cả ảnh": không coi là tìm thấy tờ giấy
+    if (onBorderCount(pick.q, w, h) >= 2) continue;
+    if (!best || pick.score > best.score) best = pick;
+  }
+  // dưới mức tự tin này thì báo "chưa thấy" để người dùng tự kéo góc, không đưa khung sai
+  if (!best || best.score < .6) return {corners: FULL.map(p => p.slice()), found: false};
+  let q = best.q, W = w, Hh = h;
+  // Căn lại ở độ phân giải cao hơn để góc sát mép giấy
+  const longSrc = Math.max(srcCanvas.width, srcCanvas.height);
+  if (longSrc > DET_SIZE * 1.4){
+    const hi = fitCanvas(srcCanvas, 1100), him = grayOf(hi), k = hi.width / w;
+    const hd = Math.hypot(him.w, him.h);
+    q = refineQuad(q.map(([x, y]) => [x * k, y * k]), boxBlur(him.y, him.w, him.h, 1), him.w, him.h, Math.max(4, Math.round(hd * .006)), Math.max(2, Math.round(hd * .003)));
+    W = him.w; Hh = him.h;
+  }
+  const corners = orderCorners(q).map(([x, y]) => [Math.min(1, Math.max(0, x / W)), Math.min(1, Math.max(0, y / Hh))]);
   return {corners, found: true};
 }
 
@@ -632,14 +1028,43 @@ function applyFilter(c, mode){
   return c;
 }
 
+/* ---------- Chấm độ mờ của trang ----------
+   So ảnh với chính nó sau khi làm mờ thêm: ảnh nét thì khác biệt giữa các điểm cạnh nhau giảm mạnh,
+   ảnh vốn đã mờ thì gần như không đổi. Kết quả từ 0 (rất nét) tới 1 (rất mờ), ít phụ thuộc trang nhiều hay ít chữ. */
+const BLUR_LIMIT = .45;
+const isBlurry = p => !p.sample && !p.blurOk && (p.blur || 0) > BLUR_LIMIT;
+function blurScore(c){
+  const w = c.width, h = c.height, d = ctx2d(c).getImageData(0, 0, w, h).data, N = w*h, I = new Float32Array(N);
+  for (let i = 0; i < N; i++) I[i] = d[i*4]*.299 + d[i*4+1]*.587 + d[i*4+2]*.114;
+  const R = 4, Bh = new Float32Array(N), Bv = new Float32Array(N);
+  for (let y = 0; y < h; y++){ let s = 0; for (let x = -R; x < w + R; x++){ s += I[y*w + Math.min(w-1, Math.max(0, x + R))] - I[y*w + Math.min(w-1, Math.max(0, x - R - 1))]; if (x >= 0 && x < w) Bh[y*w + x] = s / (2*R + 1); } }
+  for (let x = 0; x < w; x++){ let s = 0; for (let y = -R; y < h + R; y++){ s += I[Math.min(h-1, Math.max(0, y + R))*w + x] - I[Math.min(h-1, Math.max(0, y - R - 1))*w + x]; if (y >= 0 && y < h) Bv[y*w + x] = s / (2*R + 1); } }
+  // chỉ chấm ở chỗ có nét (chữ, đường kẻ), bỏ qua vùng giấy trắng và hạt nhiễu
+  let sIh = 0, sVh = 0, sIv = 0, sVv = 0, nh = 0, nv = 0;
+  for (let y = 1; y < h; y++) for (let x = 1; x < w; x++){
+    const i = y*w + x, dIh = Math.abs(I[i] - I[i-1]), dIv = Math.abs(I[i] - I[i-w]);
+    // vùng có nét: chênh lệch đủ lớn ở ảnh gốc hoặc ở ảnh làm mờ thêm (nét đã nhoè vẫn được tính)
+    const dBh = Math.abs(Bh[i] - Bh[i-1]), dBv = Math.abs(Bv[i] - Bv[i-w]);
+    if (dIh > 4 || dBh > 2){ sIh += dIh; sVh += Math.max(0, dIh - dBh); nh++; }
+    if (dIv > 4 || dBv > 2){ sIv += dIv; sVv += Math.max(0, dIv - dBv); nv++; }
+  }
+  // trang gần như trắng trơn: không đủ nét để chấm, coi như nét
+  if (nh + nv < N * .004) return 0;
+  return Math.max(nh > N * .002 ? (sIh - sVh) / Math.max(1, sIh) : 0, nv > N * .002 ? (sIv - sVv) / Math.max(1, sIv) : 0);
+}
+// Độ mờ đo trên trang đã nắn thẳng, thu về bề rộng cố định để mọi ảnh được chấm như nhau
+function pageBlur(p){ return blurScore(fitCanvas(renderBase(p, p.corners, 0, 900, p.ratio), 900)); }
+
 /* ---------- Trang ---------- */
 function makePage(source, sample){
   const src = fitCanvas(source, MAX_SRC), small = fitCanvas(src, SMALL), det = detectCorners(small), id = nextId++;
-  return {id, srcKey: id, src, small, corners: det.corners, found: det.found, rot: 0, filter: 'magic', ratio: 'auto', sig: null, thumb: null, sample: !!sample};
+  const p = {id, srcKey: id, src, small, corners: det.corners, found: det.found, rot: 0, filter: 'magic', ratio: 'auto', sig: null, thumb: null, sample: !!sample};
+  p.blur = pageBlur(p);
+  return p;
 }
 // Trang mới dùng chung ảnh gốc với trang p (cắt thêm vùng, tách trang sách)
 function clonePage(p, corners, extra){
-  return Object.assign({id: nextId++, srcKey: p.srcKey, src: p.src, small: p.small, srcBlob: p.srcBlob, corners, found: true, rot: p.rot, filter: p.filter, ratio: 'auto', sig: null, thumb: null, sample: p.sample}, extra);
+  return Object.assign({id: nextId++, srcKey: p.srcKey, src: p.src, small: p.small, srcBlob: p.srcBlob, corners, found: true, rot: p.rot, filter: p.filter, ratio: 'auto', sig: null, thumb: null, sample: p.sample, blur: p.blur, blurOk: p.blurOk}, extra);
 }
 function renderBase(p, cn, rot, maxLong, ratio){
   let c = warp(maxLong <= 700 ? p.small : p.src, cn, ratio);
@@ -683,6 +1108,7 @@ function renderGrid(){
     const card = document.createElement('div'); card.className = 'card'; card.dataset.id = p.id;
     card.innerHTML = `<button class="thumb${p.thumb ? '' : ' loading'}" data-act="edit" type="button" aria-label="Chỉnh trang ${i+1}">
         ${p.thumb ? `<img alt="Trang ${i+1}" src="${p.thumb}" draggable="false">` : ''}<span class="pno">${i+1}</span>${p.sample ? '<span class="tag">Mẫu</span>' : ''}</button>
+      ${isBlurry(p) ? `<button class="blurtag" data-act="blur" type="button" title="Ảnh bị mờ, bấm để chụp hoặc chọn lại">Mờ · chụp lại</button>` : ''}
       <div class="acts">
         <button class="ib" data-act="left" type="button" aria-label="Đưa trang lên trước" title="Đưa lên trước" ${i === 0 ? 'disabled' : ''}>${ICON.left}</button>
         <button class="ib" data-act="crop" type="button" aria-label="Cắt lại" title="Cắt lại">${ICON.edit}</button>
@@ -720,7 +1146,8 @@ grid.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b) return;
   const id = +b.closest('.card').dataset.id, i = pages.findIndex(p => p.id === id), p = pages[i]; if (!p) return;
   const act = b.dataset.act;
-  if (act === 'edit') openEditor(p, 'filter');
+  if (act === 'blur') openBlurModal(p);
+  else if (act === 'edit') openEditor(p, 'filter');
   else if (act === 'crop') openEditor(p, 'crop');
   else if (act === 'left' && i > 0){ [pages[i-1], pages[i]] = [pages[i], pages[i-1]]; renderGrid(); }
   else if (act === 'right' && i < pages.length - 1){ [pages[i+1], pages[i]] = [pages[i], pages[i+1]]; renderGrid(); }
@@ -735,18 +1162,30 @@ grid.addEventListener('click', e => {
 async function addFiles(fileList){
   const files = [...fileList].filter(f => /^image\//.test(f.type) || /\.(jpe?g|png|webp|gif|bmp|heic|heif)$/i.test(f.name));
   if (!files.length){ toast('Hãy chọn file ảnh (JPG, PNG…)'); return; }
+  // đang chụp/chọn lại cho một trang mờ: ảnh đầu tiên thay đúng vào chỗ trang đó
+  const target = takeReplaceTarget();
+  if (target){
+    try {
+      toast('Đang xử lý ảnh…', null, null, true); await frame();
+      const np = replacePage(target, makePage(await loadImageFile(files[0])));
+      refreshThumbs();
+      if (np) announceReplaced(np);
+      return 1;
+    } catch (err){ toast(`Không mở được ảnh “${files[0].name}”. Hãy thử ảnh JPG hoặc PNG.`); return 0; }
+  }
   removeSamples();
-  let ok = 0, notFound = 0;
+  let ok = 0, notFound = 0; const blurry = [];
   for (let k = 0; k < files.length; k++){
     toast(`Đang xử lý ảnh ${k+1}/${files.length}…`, null, null, true);
     await frame();
     try {
       const img = await loadImageFile(files[k]);
-      const p = makePage(img); pages.push(p); ok++; if (!p.found) notFound++;
+      const p = makePage(img); pages.push(p); ok++; if (!p.found) notFound++; if (isBlurry(p)) blurry.push(p);
       renderGrid();
     } catch (err){ toast(`Không mở được ảnh “${files[k].name}”. Hãy thử ảnh JPG hoặc PNG.`); await new Promise(r => setTimeout(r, 1600)); }
   }
   refreshThumbs();
+  if (blurry.length){ reportBlurry(blurry); return ok; }
   if (ok){
     let msg = `Đã thêm ${ok} trang.`;
     msg += notFound ? ` Có ${notFound} ảnh chưa tìm thấy mép giấy, bấm vào trang và chọn “Cắt lại”.` : ' Bấm vào trang để chỉnh nếu cần.';
@@ -754,6 +1193,56 @@ async function addFiles(fileList){
   }
   return ok;
 }
+
+/* ---------- Ảnh mờ: báo và cho chụp/chọn lại đúng trang đó ---------- */
+let replaceId = null, replaceAt = 0, blurPage = null;
+function takeReplaceTarget(){
+  const id = replaceId; replaceId = null;
+  if (!id || Date.now() - replaceAt > 10 * 60 * 1000) return null;
+  return pages.find(p => p.id === id) || null;
+}
+// trang mới vào đúng vị trí trang cũ; giữ lại kiểu màu và hướng xoay người dùng đã chọn
+function replacePage(old, np){
+  const i = pages.indexOf(old); if (i < 0){ pages.push(np); renderGrid(); return np; }
+  np.filter = old.filter; np.rot = old.rot;
+  pages.splice(i, 1, np); renderGrid();
+  return np;
+}
+function announceReplaced(np){
+  const n = pages.indexOf(np) + 1;
+  if (isBlurry(np)) toast(`Ảnh mới của trang ${n} vẫn còn mờ.`, 'Chụp lại', () => openBlurModal(np));
+  else toast(`Đã thay trang ${n} bằng ảnh rõ hơn.`);
+}
+function reportBlurry(list){
+  const nums = list.map(p => pages.indexOf(p) + 1).filter(n => n > 0);
+  const msg = nums.length === 1 ? `Trang ${nums[0]} bị mờ, chữ có thể khó đọc.` : `Có ${nums.length} trang bị mờ (trang ${nums.join(', ')}).`;
+  toast(msg, nums.length === 1 ? 'Chụp lại' : 'Xem', () => openBlurModal(list[0]));
+}
+function openBlurModal(p){
+  blurPage = p;
+  const n = pages.indexOf(p) + 1, sharp = Math.round(Math.max(0, 1 - (p.blur || 0)) * 100);
+  $('#blurImg').src = p.thumb || renderPage(p, 300).toDataURL('image/jpeg', .8);
+  $('#blurTxt').textContent = `Trang ${n} bị mờ (độ nét ${sharp}/100, nên trên ${Math.round((1 - BLUR_LIMIT) * 100)}). Chữ có thể khó đọc khi in hoặc gửi đi.`;
+  $('#blurModal').hidden = false;
+}
+const closeBlurModal = () => { $('#blurModal').hidden = true; };
+function startReplace(p){ replaceId = p.id; replaceAt = Date.now(); }
+// người dùng đóng hộp chọn ảnh mà không chọn gì: huỷ việc thay trang để lần thêm ảnh sau không thay nhầm
+['camIn', 'fileIn'].forEach(id => $('#' + id).addEventListener('cancel', () => { replaceId = null; }));
+$('#blurRetake').addEventListener('click', () => {
+  const p = blurPage; closeBlurModal(); if (!p) return;
+  startReplace(p);
+  if (!IN_FRAME && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) openLiveCam();
+  else $('#camIn').click();
+});
+$('#blurPick').addEventListener('click', () => { const p = blurPage; closeBlurModal(); if (!p) return; startReplace(p); $('#fileIn').click(); });
+$('#blurKeep').addEventListener('click', () => {
+  const p = blurPage; closeBlurModal(); if (!p) return;
+  p.blurOk = true; renderGrid();
+  const next = pages.find(isBlurry);
+  if (next) toast(`Còn trang ${pages.indexOf(next) + 1} bị mờ.`, 'Xem', () => openBlurModal(next));
+});
+$('#blurClose').addEventListener('click', closeBlurModal);
 function removeSamples(){
   let changed = false;
   for (let i = pages.length - 1; i >= 0; i--) if (pages[i].sample){ pages.splice(i, 1); changed = true; }
@@ -763,8 +1252,11 @@ $('#fileIn').addEventListener('change', e => { addFiles(e.target.files); e.targe
 // Chụp bằng camera của máy: chụp xong mời chụp tiếp trang sau
 $('#camIn').addEventListener('change', async e => {
   const files = [...e.target.files]; e.target.value = '';
+  const replacing = !!replaceId, before = pages.slice();
   const ok = await addFiles(files);
-  if (ok) toast(`Đã có ${pages.length} trang. Chụp tiếp trang sau?`, 'Chụp tiếp', () => $('#camIn').click());
+  // chụp thay trang mờ, hoặc ảnh vừa chụp bị mờ: đã có thông báo riêng, không mời chụp tiếp
+  if (!ok || replacing || pages.some(p => !before.includes(p) && isBlurry(p))) return;
+  toast(`Đã có ${pages.length} trang. Chụp tiếp trang sau?`, 'Chụp tiếp', () => $('#camIn').click());
 });
 
 /* ---------- Chụp nhiều trang liên tục bằng camera trực tiếp ---------- */
@@ -791,13 +1283,14 @@ async function openLiveCam(){
   try { await camVideo.play(); } catch (e){}
   clearTimeout(camLoop); camTick();
 }
-function closeLiveCam(){
+function closeLiveCam(quiet){
   clearTimeout(camLoop);
   if (camStream) camStream.getTracks().forEach(t => t.stop());
   camStream = null; camVideo.srcObject = null;
+  replaceId = null; // đóng camera mà chưa chụp lại: huỷ việc thay trang
   $('#cam').hidden = true; document.body.classList.remove('lock');
   refreshThumbs();
-  if (camShots) toast(`Đã chụp thêm ${camShots} trang. Bấm vào trang để chỉnh nếu cần.`);
+  if (camShots && quiet !== true) toast(`Đã chụp thêm ${camShots} trang. Bấm vào trang để chỉnh nếu cần.`);
 }
 /* Khung xanh bám mép giấy khi đang ngắm, và tự chụp khi giấy đứng yên */
 let camLoop = 0, camAuto = false, camStable = null, camArmed = true, camShotSig = null;
@@ -814,14 +1307,18 @@ $('#camAuto').addEventListener('click', () => { setCamAuto(!camAuto); camStable 
 function tinySig(){ const x = camTiny.getContext('2d', {willReadFrequently: true}); x.drawImage(camProbe, 0, 0, 24, 32); const d = x.getImageData(0, 0, 24, 32).data, s = new Float32Array(768); for (let i = 0; i < 768; i++) s[i] = d[i*4]*.3 + d[i*4+1]*.59 + d[i*4+2]*.11; return s; }
 const sigDiff = (a, b) => { let t = 0; for (let i = 0; i < a.length; i++) t += Math.abs(a[i] - b[i]); return t / a.length; };
 const cornerShift = (a, b) => Math.max(...a.map((p, i) => Math.hypot(p[0] - b[i][0], p[1] - b[i][1])));
+let camCost = 60;
 function camTick(){
   if ($('#cam').hidden) return;
-  camLoop = setTimeout(camTick, 220);
+  // nhịp dò tự giãn theo tốc độ máy để không nóng máy, không giật hình
+  camLoop = setTimeout(camTick, Math.max(200, camCost * 2.5));
   if (!camVideo.videoWidth || camBusy) return;
+  const t0 = performance.now();
   const vw = camVideo.videoWidth, vh = camVideo.videoHeight, s = 360 / Math.max(vw, vh);
   camProbe.width = Math.round(vw * s); camProbe.height = Math.round(vh * s);
   camProbe.getContext('2d', {willReadFrequently: true}).drawImage(camVideo, 0, 0, camProbe.width, camProbe.height);
-  const det = detectCorners(camProbe), now = performance.now();
+  const det = detectCorners(camProbe, true), now = performance.now();
+  camCost = camCost * .7 + (now - t0) * .3;
   let progress = 0;
   if (camShotSig && !camArmed && sigDiff(tinySig(), camShotSig) > 14) camArmed = true;
   if (!det.found){ camStable = null; camArmed = true; }
@@ -855,8 +1352,19 @@ async function shoot(auto){
   const fl = $('#camFlash'); fl.classList.add('on'); requestAnimationFrame(() => requestAnimationFrame(() => fl.classList.remove('on')));
   try {
     await frame();
+    const p = makePage(c);
+    // ảnh vừa chụp bị mờ: bỏ luôn và nhắc chụp lại (chế độ tự chụp sẽ tự chụp lại khi máy đứng yên)
+    if (isBlurry(p)){
+      camArmed = true; camShotSig = null;
+      $('#camTip').textContent = 'Ảnh vừa chụp bị mờ nên đã bỏ. Giữ chắc tay, chạm vào tờ giấy để lấy nét rồi chụp lại';
+      try { navigator.vibrate && navigator.vibrate([40, 60, 40]); } catch (e){}
+      return;
+    }
+    // đang chụp lại cho một trang mờ: thay đúng trang đó rồi đóng camera
+    const target = takeReplaceTarget();
+    if (target){ replacePage(target, p); camShots++; closeLiveCam(true); announceReplaced(p); return; }
     removeSamples();
-    const p = makePage(c); pages.push(p); camShots++;
+    pages.push(p); camShots++;
     renderGrid();
     $('#camLast').style.backgroundImage = `url(${renderPage(p, 240).toDataURL('image/jpeg', .8)})`;
     $('#camLast').innerHTML = `<b>${camShots}</b>`;
@@ -1278,7 +1786,9 @@ $('#edNext').addEventListener('click', () => {
     if (!isConvex(ed.cn)){ toast('Các góc đang bị bắt chéo, hãy kéo lại cho đúng.'); return; }
     setStep('filter');
   } else {
-    const p = ed.p; p.corners = ed.cn; p.rot = ed.rot; p.filter = ed.filter; p.ratio = ed.ratio; p.sig = ed.sig ? {...ed.sig} : null; p.thumb = null; delete p.fresh;
+    const p = ed.p, moved = JSON.stringify(p.corners) !== JSON.stringify(ed.cn) || p.ratio !== ed.ratio;
+    p.corners = ed.cn; p.rot = ed.rot; p.filter = ed.filter; p.ratio = ed.ratio; p.sig = ed.sig ? {...ed.sig} : null; p.thumb = null; delete p.fresh;
+    if (moved) p.blur = pageBlur(p); // vùng cắt đổi thì chấm lại độ nét
     closeEditor(); renderGrid(); refreshThumbs();
   }
 });
@@ -1291,6 +1801,7 @@ $('#edCancel').addEventListener('click', () => { if (ed.step === 'filter') setSt
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape'){
     if (!$('#cam').hidden) closeLiveCam();
+    else if (!$('#blurModal').hidden) closeBlurModal();
     else if (!$('#sigModal').hidden) $('#sigModal').hidden = true;
     else if (!$('#ocrModal').hidden) closeOcr();
     else if (!$('#installModal').hidden) $('#installModal').hidden = true;
@@ -1577,7 +2088,7 @@ async function persist(){
       pages.forEach(q => { if (q.srcKey === p.srcKey) q.srcBlob = p.srcBlob; });
       puts.push(['src:' + p.srcKey, p.srcBlob]); fresh.push(p.srcKey);
     }
-    puts.push(['meta', real.map(p => ({id: p.id, srcKey: p.srcKey, corners: p.corners, rot: p.rot, filter: p.filter, ratio: p.ratio, found: p.found, sig: p.sig || null}))]);
+    puts.push(['meta', real.map(p => ({id: p.id, srcKey: p.srcKey, corners: p.corners, rot: p.rot, filter: p.filter, ratio: p.ratio, found: p.found, sig: p.sig || null, blur: p.blur || 0, blurOk: !!p.blurOk}))]);
     const live = new Set(real.map(p => p.srcKey)), gone = [...savedSrc].filter(k => !live.has(k));
     await idbWrite(puts, gone.map(k => 'src:' + k));
     fresh.forEach(k => savedSrc.add(k)); gone.forEach(k => savedSrc.delete(k));
