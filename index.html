@@ -582,9 +582,11 @@ function centerComp(m, w, h){
 function compQuad(comp, w, h){
   if (!comp) return null;
   const ratio = comp.count / (w*h); if (ratio < .04 || ratio > .985) return null;
-  const pts = []; for (let y = 0; y < h; y++) if (comp.rmax[y] >= 0) pts.push([comp.rmin[y], y], [comp.rmax[y] + 1, y]);
+  const pts = []; let span = 0;
+  for (let y = 0; y < h; y++) if (comp.rmax[y] >= 0){ pts.push([comp.rmin[y], y], [comp.rmax[y] + 1, y]); span += comp.rmax[y] - comp.rmin[y] + 1; }
   const quad = maxQuad(convexHull(pts)); if (!quad) return null;
-  if (comp.count / Math.max(1, polyArea(quad)) < .72) return null;
+  // đo theo bề ngang từng hàng (lấp cả chỗ chữ in đậm bên trong) để giấy kín chữ vẫn được nhận là một khối
+  if (Math.max(comp.count, span * .9) / Math.max(1, polyArea(quad)) < .72) return null;
   return orderCorners(quad);
 }
 function candidateQuads(gm, rgb, G, w, h){
@@ -912,7 +914,7 @@ function grayOf(c){
   return {w, h, r, g, b, y};
 }
 // fast = true: bản rút gọn cho lúc ngắm camera (chỉ để vẽ khung xanh); ảnh chụp vẫn dò đầy đủ
-function detectCorners(srcCanvas, fast){
+function detectCorners(srcCanvas, fast, hiSrc){
   if (fast) return detectFast(srcCanvas);
   const t = fitCanvas(srcCanvas, DET_SIZE), im = grayOf(t), w = im.w, h = im.h;
   const g1 = boxBlur(im.y, w, h, 1), gm = boxBlur(im.y, w, h, 2), G = sobel(g1, w, h);
@@ -940,16 +942,31 @@ function detectCorners(srcCanvas, fast){
   // dưới mức tự tin này thì báo "chưa thấy" để người dùng tự kéo góc, không đưa khung sai
   if (!best || best.score < .6) return {corners: FULL.map(p => p.slice()), found: false};
   let q = best.q, W = w, Hh = h;
-  // Căn lại ở độ phân giải cao hơn để góc sát mép giấy
-  const longSrc = Math.max(srcCanvas.width, srcCanvas.height);
+  // Căn lại trên ảnh nét hơn (ảnh gốc nếu có) để góc sát mép giấy, hai lượt: dải rộng rồi dải hẹp
+  const hs = hiSrc || srcCanvas, longSrc = Math.max(hs.width, hs.height);
   if (longSrc > DET_SIZE * 1.4){
-    const hi = fitCanvas(srcCanvas, 1100), him = grayOf(hi), k = hi.width / w;
-    const hd = Math.hypot(him.w, him.h);
-    q = refineQuad(q.map(([x, y]) => [x * k, y * k]), boxBlur(him.y, him.w, him.h, 1), him.w, him.h, Math.max(4, Math.round(hd * .006)), Math.max(2, Math.round(hd * .003)));
+    const hi = fitCanvas(hs, 2000), him = grayOf(hi), k = hi.width / w;
+    const hd = Math.hypot(him.w, him.h), hb = boxBlur(him.y, him.w, him.h, 1);
+    q = refineQuad(q.map(([x, y]) => [x * k, y * k]), hb, him.w, him.h, Math.max(4, Math.round(hd * .006)), Math.max(2, Math.round(hd * .003)));
+    q = refineQuad(q, hb, him.w, him.h, Math.max(3, Math.round(hd * .003)), Math.max(2, Math.round(hd * .0015)));
     W = him.w; Hh = him.h;
   }
-  const corners = orderCorners(q).map(([x, y]) => [Math.min(1, Math.max(0, x / W)), Math.min(1, Math.max(0, y / Hh))]);
+  q = insetQuad(orderCorners(q), Math.hypot(W, Hh) * .0012, W, Hh);
+  const corners = q.map(([x, y]) => [Math.min(1, Math.max(0, x / W)), Math.min(1, Math.max(0, y / Hh))]);
   return {corners, found: true};
+}
+// Thu mỗi cạnh vào trong một chút (vài điểm ảnh) để trang sau khi cắt không dính viền mặt bàn;
+// cạnh nằm trên mép ảnh (giấy lẹm ra ngoài) thì giữ nguyên
+function insetQuad(q, s, w, h){
+  const c = quadCenter(q), L = [];
+  for (let i = 0; i < 4; i++){
+    const A = q[i], B = q[(i+1) % 4], {len, nx, ny} = sideFrame(A, B, c);
+    const onEdge = (Math.abs(A[0] - B[0]) < 4 && (A[0] < 4 || A[0] > w - 5)) || (Math.abs(A[1] - B[1]) < 4 && (A[1] < 4 || A[1] > h - 5));
+    const o = onEdge ? 0 : s;
+    L.push({x: A[0] - nx * o, y: A[1] - ny * o, dx: (B[0] - A[0]) / len, dy: (B[1] - A[1]) / len});
+  }
+  const nq = q.map((p, i) => intersectLines(L[(i + 3) % 4], L[i]) || p);
+  return isConvex(nq) ? nq : q;
 }
 
 /* ---------- Bộ lọc: làm phẳng ánh sáng, trắng nền, đậm chữ ---------- */
@@ -1000,17 +1017,45 @@ function applyFilter(c, mode){
     let f = (xx + .5) / bs - .5; if (f < 0) f = 0; if (f > gw - 1) f = gw - 1;
     xi0[xx] = f | 0; xi1[xx] = Math.min(gw - 1, xi0[xx] + 1); xw[xx] = f - xi0[xx];
   }
-  const [bR, bG, bB] = bg, lo = .14, k = 1 / (.9 - lo);
-  const lv = v => { v = (v - lo) * k; return v < 0 ? 0 : v > 1 ? 1 : v; };
-  for (let y = 0; y < H; y++){
-    let f = (y + .5) / bs - .5; if (f < 0) f = 0; if (f > gh - 1) f = gh - 1;
-    const r0 = (f | 0) * gw, r1 = Math.min(gh - 1, (f | 0) + 1) * gw, wy = f - (f | 0);
-    for (let xx = 0; xx < W; xx++){
-      const i = (y*W + xx) * 4, a0 = r0 + xi0[xx], a1 = r0 + xi1[xx], c0 = r1 + xi0[xx], c1 = r1 + xi1[xx], wx = xw[xx];
+  const [bR, bG, bB] = bg, N = W * H;
+  const rowOf = y => { let f = (y + .5) / bs - .5; if (f < 0) f = 0; if (f > gh - 1) f = gh - 1; return [(f | 0) * gw, Math.min(gh - 1, (f | 0) + 1) * gw, f - (f | 0)]; };
+  // Độ sáng gốc của từng điểm, giữ riêng để làm nét chữ (đọc điểm lân cận chưa bị sửa)
+  const Y8 = new Uint8Array(N);
+  for (let i = 0, j = 0; i < N; i++, j += 4) Y8[i] = (p[j]*77 + p[j+1]*150 + p[j+2]*29) >> 8;
+  // Đo màu mực thật của trang: chữ chụp bằng điện thoại thường xám nhạt chứ không đen.
+  // Lấy mức tối điển hình của các nét chữ để kéo về gần đen; trang không có chữ thì dùng mức mặc định.
+  const ink = [], sstep = Math.max(1, Math.round(Math.sqrt(N / 160000)));
+  for (let y = 0; y < H; y += sstep){
+    const [r0, r1, wy] = rowOf(y);
+    for (let xx = 0; xx < W; xx += sstep){
+      const a0 = r0 + xi0[xx], a1 = r0 + xi1[xx], c0 = r1 + xi0[xx], c1 = r1 + xi1[xx], wx = xw[xx];
       const w00 = (1-wx)*(1-wy), w10 = wx*(1-wy), w01 = (1-wx)*wy, w11 = wx*wy;
-      const r = p[i] / (bR[a0]*w00 + bR[a1]*w10 + bR[c0]*w01 + bR[c1]*w11);
-      const gq = p[i+1] / (bG[a0]*w00 + bG[a1]*w10 + bG[c0]*w01 + bG[c1]*w11);
-      const b = p[i+2] / (bB[a0]*w00 + bB[a1]*w10 + bB[c0]*w01 + bB[c1]*w11);
+      const bl = .299*(bR[a0]*w00 + bR[a1]*w10 + bR[c0]*w01 + bR[c1]*w11) + .587*(bG[a0]*w00 + bG[a1]*w10 + bG[c0]*w01 + bG[c1]*w11) + .114*(bB[a0]*w00 + bB[a1]*w10 + bB[c0]*w01 + bB[c1]*w11);
+      const L = Y8[y*W + xx] / bl; if (L < .72) ink.push(L);
+    }
+  }
+  const sampled = Math.ceil(H / sstep) * Math.ceil(W / sstep);
+  let lo = .14;
+  if (ink.length > sampled * .003){ ink.sort((a, b) => a - b); lo = Math.min(.4, Math.max(.12, ink[Math.floor(ink.length * .25)] + .03)); }
+  // điểm sáng hơn mức này là giấy (thành trắng); tối hơn "lo" là mực (thành đen)
+  const hi = mode === 'gray' ? .9 : .86, k = 1 / (hi - lo), GAM = 1.45;
+  // bảng tra sẵn cho nhanh: đường cong làm tối phần chữ, giữ giấy trắng
+  const LUT = new Float32Array(1025);
+  for (let j = 0; j <= 1024; j++){ const v = (j / 1024 * 1.25 - lo) * k; LUT[j] = v <= 0 ? 0 : v >= 1 ? 1 : Math.pow(v, GAM); }
+  const lv = v => v <= 0 ? 0 : v >= 1.25 ? 1 : LUT[(v * 819.2) | 0];
+  // làm nét: cộng thêm phần chênh giữa điểm và trung bình 8 điểm quanh nó (mép chữ rõ hơn, không nhoè)
+  const sr = Math.max(1, Math.round(Math.max(W, H) / 1600)), AMT = mode === 'bw' ? .6 : .85;
+  for (let y = 0; y < H; y++){
+    const [r0, r1, wy] = rowOf(y), yu = Math.max(0, y - sr) * W, yc = y * W, yd = Math.min(H - 1, y + sr) * W;
+    for (let xx = 0; xx < W; xx++){
+      const i = (yc + xx) * 4, a0 = r0 + xi0[xx], a1 = r0 + xi1[xx], c0 = r1 + xi0[xx], c1 = r1 + xi1[xx], wx = xw[xx];
+      const w00 = (1-wx)*(1-wy), w10 = wx*(1-wy), w01 = (1-wx)*wy, w11 = wx*wy;
+      const xl = Math.max(0, xx - sr), xr = Math.min(W - 1, xx + sr);
+      const m = (Y8[yu+xl] + Y8[yu+xx] + Y8[yu+xr] + Y8[yc+xl] + Y8[yc+xr] + Y8[yd+xl] + Y8[yd+xx] + Y8[yd+xr]) / 8;
+      const dl = AMT * (Y8[yc+xx] - m);
+      const r = (p[i] + dl) / (bR[a0]*w00 + bR[a1]*w10 + bR[c0]*w01 + bR[c1]*w11);
+      const gq = (p[i+1] + dl) / (bG[a0]*w00 + bG[a1]*w10 + bG[c0]*w01 + bG[c1]*w11);
+      const b = (p[i+2] + dl) / (bB[a0]*w00 + bB[a1]*w10 + bB[c0]*w01 + bB[c1]*w11);
       if (mode === 'magic'){
         let R = lv(r), Gc = lv(gq), B = lv(b); const L = .299*R + .587*Gc + .114*B;
         R = L + (R - L) * 1.3; Gc = L + (Gc - L) * 1.3; B = L + (B - L) * 1.3;
@@ -1019,7 +1064,8 @@ function applyFilter(c, mode){
         const L = .299*r + .587*gq + .114*b;
         let v;
         if (mode === 'gray') v = lv(L);
-        else { v = (L - .6) / .18; v = v < 0 ? 0 : v > 1 ? 1 : v; }
+        // ngưỡng đen trắng đặt giữa màu mực và màu giấy của chính trang này
+        else { const t = lo + (hi - lo) * .75; v = (L - t + .08) / .16; v = v < 0 ? 0 : v > 1 ? 1 : v; }
         p[i] = p[i+1] = p[i+2] = v * 255;
       }
     }
@@ -1057,7 +1103,7 @@ function pageBlur(p){ return blurScore(fitCanvas(renderBase(p, p.corners, 0, 900
 
 /* ---------- Trang ---------- */
 function makePage(source, sample){
-  const src = fitCanvas(source, MAX_SRC), small = fitCanvas(src, SMALL), det = detectCorners(small), id = nextId++;
+  const src = fitCanvas(source, MAX_SRC), small = fitCanvas(src, SMALL), det = detectCorners(small, false, src), id = nextId++;
   const p = {id, srcKey: id, src, small, corners: det.corners, found: det.found, rot: 0, filter: 'magic', ratio: 'auto', sig: null, thumb: null, sample: !!sample};
   p.blur = pageBlur(p);
   return p;
@@ -1603,7 +1649,7 @@ $('#btnUndo').addEventListener('click', undo);
 $('#btnAuto').addEventListener('click', () => {
   if (ed.drawMode) setDrawMode(false);
   pushHist();
-  const det = detectCorners(ed.p.small); ed.cn = det.corners; ed.p.found = det.found; drawCrop(); updateCropHint();
+  const det = detectCorners(ed.p.small, false, ed.p.src); ed.cn = det.corners; ed.p.found = det.found; drawCrop(); updateCropHint();
   if (!det.found) toast('Không tìm thấy mép giấy rõ ràng. Hãy bấm “Vẽ khung mới” hoặc kéo 4 góc bằng tay.');
 });
 $('#btnFull').addEventListener('click', () => { if (ed.drawMode) setDrawMode(false); pushHist(); ed.cn = FULL.map(p => p.slice()); drawCrop(); updateCropHint(); });

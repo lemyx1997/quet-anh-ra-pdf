@@ -1,7 +1,7 @@
 // Giúp app mở được khi không có mạng và cài được như ứng dụng thật.
 // Trang chính: lấy bản mới từ mạng trước, mất mạng thì dùng bản đã lưu.
 // Thư viện, phông chữ, biểu tượng: dùng bản đã lưu, đồng thời cập nhật ngầm.
-const CACHE = 'quetpdf-v6';
+const CACHE = 'quetpdf-v7';
 const CORE = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png'];
 const CDN = ['https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'];
 const CACHE_HOSTS = ['cdnjs.cloudflare.com', 'fonts.googleapis.com', 'fonts.gstatic.com'];

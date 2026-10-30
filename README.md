@@ -25,7 +25,7 @@ Sau khi cài, app có biểu tượng riêng và mở được cả khi không c
 - Chọn nhiều ảnh, kéo thả hoặc dán (Ctrl+V).
 
 **Cắt và chỉnh trang**
-- Tự tìm mép giấy và nắn thẳng, kể cả giấy trên bàn sáng màu, nền trắng hay nền nhiều đồ vật. App phân biệt mép giấy với viền bảng hay dòng tiêu đề đậm bên trong tờ giấy, rồi căn từng cạnh sát mép thật. Khi không chắc, app báo "chưa thấy mép giấy" để bạn tự kéo góc, không đưa ra khung sai.
+- Tự tìm mép giấy và nắn thẳng, kể cả giấy trên bàn sáng màu, nền trắng hay nền nhiều đồ vật. App phân biệt mép giấy với viền bảng hay dòng tiêu đề đậm bên trong tờ giấy, rồi căn từng cạnh sát mép thật trên ảnh gốc độ phân giải cao, và cắt lẹm vào trong một chút để trang không dính viền mặt bàn. Giấy kín chữ in đậm, bảng biểu dày đặc vẫn được nhận ra. Khi không chắc, app báo "chưa thấy mép giấy" để bạn tự kéo góc, không đưa ra khung sai.
 - **Báo ảnh mờ**: mỗi trang được chấm độ nét. Trang mờ có nhãn đỏ, kèm lựa chọn Chụp lại, Chọn ảnh khác hoặc Vẫn giữ; ảnh mới thay đúng vào vị trí trang đó. Khi chụp bằng camera trong app, ảnh mờ bị bỏ ngay và app nhắc chụp lại.
 - Cắt theo tứ giác tuỳ ý:
   - kéo góc, có kính lúp để đặt chính xác;
@@ -35,7 +35,7 @@ Sau khi cài, app có biểu tượng riêng và mở được cả khi không c
 - Khổ trang: Tự động, A4, Thẻ/CCCD, Vuông.
 - **Tách 2 trang sách**: tự tìm gáy sách và tách thành hai trang.
 - Cắt thêm vùng khác từ cùng một ảnh.
-- Kiểu màu: Rõ nét (làm trắng nền, khử bóng), Ảnh gốc, Xám, Đen trắng.
+- Kiểu màu: Rõ nét (làm trắng nền, khử bóng, chữ đậm và nét), Ảnh gốc, Xám, Đen trắng. App tự đo màu chữ của từng trang: chữ chụp bị nhạt, xám vẫn được kéo về màu đen đậm, mép chữ được làm sắc để dễ đọc.
 
 **Ký tên và đọc chữ**
 - **Ký tên**: ký bằng ngón tay, đặt lên trang, kéo dời, đổi cỡ. Chữ ký được lưu lại để dùng tiếp.
